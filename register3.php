@@ -64,6 +64,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && empty($_GET['finalize'])) {
     $availabilityForm = $_POST['availability'] ?? [];
     $availabilityEntries = [];
     $totalAvailabilityHours = 0.0;
+    $dailyAvailabilityHours = [];
+    $availabilitySlotErrors = [];
     $availabilityDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     $availabilityPeriods = ['morning', 'afternoon'];
 
@@ -81,6 +83,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && empty($_GET['finalize'])) {
             $timeEnd = trim((string) ($slot['end'] ?? ''));
             if (!preg_match('/^(?:[01]\d|2[0-3]):[0-5]\d$/', $timeStart) || !preg_match('/^(?:[01]\d|2[0-3]):[0-5]\d$/', $timeEnd)) {
                 $errors['availability'] = 'Enter a valid start and end time for each selected slot.';
+                $availabilitySlotErrors[$day][$period] = 'Enter a valid start and end time.';
+                continue;
+            }
+
+            $latestEndTime = $day === 'Saturday' ? '12:00' : '17:00';
+            if ($timeStart < '08:00' || $timeEnd > $latestEndTime) {
+                $errors['availability'] = $day === 'Saturday'
+                    ? 'Saturday availability must be within office hours, up to 12:00 PM only.'
+                    : 'Weekday availability must be within office hours, up to 5:00 PM only.';
+                $availabilitySlotErrors[$day][$period] = $errors['availability'];
                 continue;
             }
 
@@ -89,10 +101,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && empty($_GET['finalize'])) {
             $hours = ($endTimestamp - $startTimestamp) / 3600;
             if ($hours < 2) {
                 $errors['availability'] = 'Each availability slot must be at least 2 hours, with the end time after the start time.';
+                $availabilitySlotErrors[$day][$period] = 'This selected slot is only ' . rtrim(rtrim(number_format($hours, 1), '0'), '.') . ' hour(s). Minimum duty time is 2 hours.';
                 continue;
             }
 
             $totalAvailabilityHours += $hours;
+            $dailyAvailabilityHours[$day] = ($dailyAvailabilityHours[$day] ?? 0.0) + $hours;
             $availabilityEntries[] = [
                 'day_of_week' => $day,
                 'time_start' => $timeStart,
@@ -104,6 +118,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && empty($_GET['finalize'])) {
 
     if (count($availabilityEntries) === 0) {
         $errors['availability'] = 'Please choose at least one availability slot.';
+    } elseif (array_filter($dailyAvailabilityHours, static fn (float $hours): bool => $hours < 2.0) !== []) {
+        $errors['availability'] = 'Each day with availability must have at least 2 duty hours.';
     } elseif ($totalAvailabilityHours < 10) {
         $errors['availability'] = 'Minimum required availability is 10 hours per week.';
     }
@@ -373,6 +389,7 @@ if (isset($_GET['finalize'])) {
                     (:application_id, :term_id, :day_of_week, :start_time, :end_time, :notes)'
             );
             $totalAvailabilityHours = 0.0;
+            $dailyAvailabilityHours = [];
             foreach (($step3['availability'] ?? []) as $entry) {
                 $startTimestamp = strtotime('1970-01-01 ' . (string) ($entry['time_start'] ?? ''));
                 $endTimestamp = strtotime('1970-01-01 ' . (string) ($entry['time_end'] ?? ''));
@@ -380,7 +397,10 @@ if (isset($_GET['finalize'])) {
                     throw new RuntimeException('An availability time slot is invalid. Please review your schedule.');
                 }
 
-                $totalAvailabilityHours += ($endTimestamp - $startTimestamp) / 3600;
+                $hours = ($endTimestamp - $startTimestamp) / 3600;
+                $day = (string) ($entry['day_of_week'] ?? '');
+                $dailyAvailabilityHours[$day] = ($dailyAvailabilityHours[$day] ?? 0.0) + $hours;
+                $totalAvailabilityHours += $hours;
                 $availabilityStatement->execute([
                     'application_id' => $applicationId,
                     'term_id' => (int) $activeTermId,
@@ -389,6 +409,10 @@ if (isset($_GET['finalize'])) {
                     'end_time' => (string) ($entry['time_end'] ?? ''),
                     'notes' => ($entry['notes'] ?? '') !== '' ? (string) $entry['notes'] : null,
                 ]);
+            }
+
+            if (array_filter($dailyAvailabilityHours, static fn (float $hours): bool => $hours < 2.0) !== []) {
+                throw new RuntimeException('Each day with availability must have at least 2 duty hours. Please review your schedule.');
             }
 
             if ($totalAvailabilityHours < 10) {
@@ -781,8 +805,20 @@ $hasExistingCor = !empty($existingCor['stored_path']) && file_exists($existingCo
             font: inherit;
             resize: vertical;
         }
+        .slot-conflict-container {
+            grid-column: 2 / -1;
+            min-width: 0;
+        }
         .availability-error {
             color: #b91c1c;
+            font-weight: 700;
+        }
+        .availability-slot-error {
+            display: block;
+            grid-column: 1 / -1;
+            margin-top: 6px;
+            color: #b91c1c;
+            font-size: 12px;
             font-weight: 700;
         }
         .field__label {
@@ -1536,7 +1572,7 @@ $hasExistingCor = !empty($existingCor['stored_path']) && file_exists($existingCo
                     <div class="field availability-section">
                         <div>
                             <label class="field__label">Weekly Availability *</label>
-                            <p>Select your available morning and/or afternoon hours. Each selected slot must be at least 2 hours, with at least 10 hours total per week.</p>
+                            <p>Select your available morning and/or afternoon hours. Each selected day must have at least 2 duty hours, with at least 10 hours total per week.</p>
                             <p id="monthly-hours-preview" style="margin-top:8px;font-weight:700;color:#1e3a8a;" role="status"></p>
                         </div>
                         <?php if (!empty($errors['availability'])): ?>
@@ -1547,22 +1583,26 @@ $hasExistingCor = !empty($existingCor['stored_path']) && file_exists($existingCo
                                 <?php $dayValues = $availabilityForm[$day] ?? []; ?>
                                 <section class="availability-day" aria-label="<?= htmlspecialchars($day, ENT_QUOTES, 'UTF-8') ?> availability">
                                     <h3><?= htmlspecialchars($day, ENT_QUOTES, 'UTF-8') ?></h3>
-                                    <?php foreach (['morning' => ['Morning', '08:00', '12:00'], 'afternoon' => ['Afternoon', '13:00', '20:00']] as $period => [$periodLabel, $defaultStart, $defaultEnd]): ?>
+                                    <?php foreach (['morning' => ['Morning', '08:00', '12:00'], 'afternoon' => ['Afternoon', '13:00', $day === 'Saturday' ? '12:00' : '17:00']] as $period => [$periodLabel, $defaultStart, $defaultEnd]): ?>
                                         <?php
                                             $slotValues = $dayValues[$period] ?? [];
                                             $slotEnabled = array_key_exists('enabled', $slotValues)
                                                 ? !empty($slotValues['enabled'])
                                                 : ($period === 'morning' && empty($availabilityForm));
+                                            $slotUnavailable = $day === 'Saturday' && $period === 'afternoon';
                                         ?>
                                         <div class="availability-slot" data-day="<?= htmlspecialchars($day, ENT_QUOTES, 'UTF-8') ?>" data-period="<?= $period ?>">
                                             <label>
-                                                <input type="checkbox" name="availability[<?= htmlspecialchars($day, ENT_QUOTES, 'UTF-8') ?>][<?= $period ?>][enabled]" value="1" <?= $slotEnabled ? 'checked' : '' ?> />
+                                                <input type="checkbox" name="availability[<?= htmlspecialchars($day, ENT_QUOTES, 'UTF-8') ?>][<?= $period ?>][enabled]" value="1" <?= $slotEnabled ? 'checked' : '' ?> <?= $slotUnavailable ? 'disabled' : '' ?> />
                                                 <?= htmlspecialchars($periodLabel, ENT_QUOTES, 'UTF-8') ?>
                                             </label>
                                             <div class="slot-conflict-container" id="conflict-tag-<?= strtolower($day) ?>-<?= $period ?>"></div>
                                             <input type="time" name="availability[<?= htmlspecialchars($day, ENT_QUOTES, 'UTF-8') ?>][<?= $period ?>][start]" value="<?= htmlspecialchars((string) ($slotValues['start'] ?? $defaultStart), ENT_QUOTES, 'UTF-8') ?>" aria-label="<?= htmlspecialchars($day . ' ' . $periodLabel . ' start time', ENT_QUOTES, 'UTF-8') ?>" />
                                             <input type="time" name="availability[<?= htmlspecialchars($day, ENT_QUOTES, 'UTF-8') ?>][<?= $period ?>][end]" value="<?= htmlspecialchars((string) ($slotValues['end'] ?? $defaultEnd), ENT_QUOTES, 'UTF-8') ?>" aria-label="<?= htmlspecialchars($day . ' ' . $periodLabel . ' end time', ENT_QUOTES, 'UTF-8') ?>" />
                                             <textarea name="availability[<?= htmlspecialchars($day, ENT_QUOTES, 'UTF-8') ?>][<?= $period ?>][notes]" maxlength="500" placeholder="Notes / reason for adjustment (if schedule differs from COR)" aria-label="<?= htmlspecialchars($day . ' ' . $periodLabel . ' note', ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars((string) ($slotValues['notes'] ?? ''), ENT_QUOTES, 'UTF-8') ?></textarea>
+                                            <?php if (!empty($availabilitySlotErrors[$day][$period])): ?>
+                                                <span class="availability-slot-error" role="alert"><?= htmlspecialchars($availabilitySlotErrors[$day][$period], ENT_QUOTES, 'UTF-8') ?></span>
+                                            <?php endif; ?>
                                         </div>
                                     <?php endforeach; ?>
                                 </section>
@@ -1696,6 +1736,7 @@ $hasExistingCor = !empty($existingCor['stored_path']) && file_exists($existingCo
 <script>
 (function () {
     var preview = document.getElementById('monthly-hours-preview');
+    var availabilityForm = document.querySelector('form[method="POST"]');
     var units = <?= (int) ($step2['units'] ?? 0) ?>;
     var minimum = units <= 14 ? 100 : (units <= 18 ? 75 : 50);
 
@@ -1723,6 +1764,46 @@ $hasExistingCor = !empty($existingCor['stored_path']) && file_exists($existingCo
         input.addEventListener('change', updatePreview);
     });
     updatePreview();
+
+    if (availabilityForm) {
+        availabilityForm.addEventListener('submit', function (event) {
+            var firstInvalidSlot = null;
+
+            document.querySelectorAll('.availability-slot').forEach(function (slot) {
+                var checkbox = slot.querySelector('input[type="checkbox"]');
+                var times = slot.querySelectorAll('input[type="time"]');
+                var clientError = slot.querySelector('.availability-slot-error[data-client-error="true"]');
+
+                if (clientError) {
+                    clientError.remove();
+                }
+                if (!checkbox || !checkbox.checked || times.length !== 2) return;
+
+                var startParts = times[0].value.split(':');
+                var endParts = times[1].value.split(':');
+                if (startParts.length !== 2 || endParts.length !== 2) return;
+
+                var startMinutes = parseInt(startParts[0], 10) * 60 + parseInt(startParts[1], 10);
+                var endMinutes = parseInt(endParts[0], 10) * 60 + parseInt(endParts[1], 10);
+                var durationHours = (endMinutes - startMinutes) / 60;
+
+                if (durationHours < 2) {
+                    var message = document.createElement('span');
+                    message.className = 'availability-slot-error';
+                    message.dataset.clientError = 'true';
+                    message.setAttribute('role', 'alert');
+                    message.textContent = 'This selected slot is only ' + (durationHours > 0 ? durationHours : 0) + ' hour(s). Minimum duty time is 2 hours.';
+                    slot.appendChild(message);
+                    if (!firstInvalidSlot) firstInvalidSlot = slot;
+                }
+            });
+
+            if (firstInvalidSlot) {
+                event.preventDefault();
+                firstInvalidSlot.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        });
+    }
 
     /* ── NUIS COR Scanner Integration ── */
     var corDropzone = document.getElementById('cor-dropzone');
@@ -1886,7 +1967,12 @@ $hasExistingCor = !empty($existingCor['stored_path']) && file_exists($existingCo
         days.forEach(function (day) {
             corBaseline[day] = {};
             ['morning', 'afternoon'].forEach(function (period) {
-                var availData = result.availability[day] ? result.availability[day][period] : { free: true, start: (period === 'morning' ? '08:00' : '13:00'), end: (period === 'morning' ? '12:00' : '20:00'), conflicts: [] };
+                var availData = result.availability[day] ? result.availability[day][period] : {
+                    free: day !== 'Saturday',
+                    start: period === 'morning' ? '08:00' : (day === 'Saturday' ? '12:00' : '13:00'),
+                    end: period === 'morning' ? '12:00' : (day === 'Saturday' ? '12:00' : '17:00'),
+                    conflicts: []
+                };
                 var isFree = availData.free;
 
                 var slot = document.querySelector('.availability-slot[data-day="' + day + '"][data-period="' + period + '"]');

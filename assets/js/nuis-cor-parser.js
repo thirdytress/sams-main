@@ -206,14 +206,15 @@
 
         // Calculate free time availability for Monday - Saturday
         // Morning standard window: 08:00 - 12:00 (480 - 720 min)
-        // Afternoon standard window: 13:00 - 20:00 (780 - 1200 min)
+        // Weekday afternoon standard window: 13:00 - 17:00 (780 - 1020 min)
+        // Saturday is a half-day and has no afternoon availability window.
         const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
         const availability = {};
 
         const MORNING_START = 8 * 60;   // 08:00 (480)
         const MORNING_END = 12 * 60;    // 12:00 (720)
         const AFTERNOON_START = 13 * 60;// 13:00 (780)
-        const AFTERNOON_END = 20 * 60;  // 20:00 (1200)
+        const AFTERNOON_END = 17 * 60;  // 17:00 (1020)
 
         daysOfWeek.forEach(day => {
             const dayClasses = classSchedules.filter(c => c.days.includes(day));
@@ -244,13 +245,34 @@
                 }
             }
 
-            // Afternoon check
-            const afternoonClasses = dayClasses.filter(c => !(c.endMin <= AFTERNOON_START || c.startMin >= AFTERNOON_END));
-            let afternoonFree = afternoonClasses.length === 0;
+            // Afternoon check. Saturday offices are closed after 12:00.
+            const isSaturday = day === 'Saturday';
+            const afternoonClasses = isSaturday
+                ? []
+                : dayClasses.filter(c => !(c.endMin <= AFTERNOON_START || c.startMin >= AFTERNOON_END));
+            let afternoonFree = !isSaturday && afternoonClasses.length === 0;
             let afternoonStart = '13:00';
-            let afternoonEnd = '20:00';
+            let afternoonEnd = isSaturday ? '12:00' : '17:00';
 
             if (!afternoonFree) {
+                if (isSaturday) {
+                    availability[day] = {
+                        morning: {
+                            free: morningFree,
+                            start: morningStart,
+                            end: morningEnd,
+                            conflicts: morningClasses.map(c => `${c.subjectCode ? c.subjectCode + ': ' : ''}${c.displayTime}`)
+                        },
+                        afternoon: {
+                            free: false,
+                            start: '12:00',
+                            end: '12:00',
+                            conflicts: []
+                        }
+                    };
+                    return;
+                }
+
                 // Check if there is a >= 2-hour window before first afternoon class (e.g. 13:00 to 17:00 when class starts at 17:00)
                 const sortedAfternoon = [...afternoonClasses].sort((a, b) => a.startMin - b.startMin);
                 const firstAfternoon = sortedAfternoon[0];
@@ -265,7 +287,7 @@
                     if (AFTERNOON_END - lastAfternoon.endMin >= 120) {
                         afternoonFree = true;
                         afternoonStart = minutesTo24H(lastAfternoon.endMin);
-                        afternoonEnd = '20:00';
+                        afternoonEnd = '17:00';
                     }
                 }
             }
