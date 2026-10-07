@@ -39,7 +39,13 @@ function sams_send_schedule_email(string $toEmail, string $toName, string $actio
     if (!empty($details)) {
         $message .= '<br><br><strong>Schedule Details:</strong><br>';
         foreach ($details as $k => $v) {
-            $message .= ucfirst($k) . ': ' . htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8') . '<br>';
+            $label = (string) $k;
+            if ($label === 'Admin Explanation') {
+                $message .= '<br><strong>Why a Personal Reason was overridden:</strong><br>';
+                $message .= htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8') . '<br>';
+                continue;
+            }
+            $message .= ucfirst($label) . ': ' . htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8') . '<br>';
         }
     }
 
@@ -181,6 +187,8 @@ function sams_build_branded_email(
         ?string $ctaUrl = null,
         bool $isHtmlMessage = false
 ): string {
+        $brandPrimary = '#003087';
+        $brandAction = '#155dfc';
         $safeEyebrow = htmlspecialchars($eyebrow, ENT_QUOTES, 'UTF-8');
         $safeHeading = htmlspecialchars($heading, ENT_QUOTES, 'UTF-8');
         $safeMessage = $isHtmlMessage ? $message : nl2br(htmlspecialchars($message, ENT_QUOTES, 'UTF-8'));
@@ -192,16 +200,16 @@ function sams_build_branded_email(
                 $ctaHtml = '
                     <tr>
                         <td style="padding: 8px 0 0;">
-                            <a href="' . $safeCtaUrl . '" style="display:inline-block;background:' . $accent . ';color:#fff;text-decoration:none;font-weight:700;padding:14px 22px;border-radius:12px;">' . $safeCtaLabel . '</a>
+                            <a href="' . $safeCtaUrl . '" style="display:inline-block;background:' . $brandAction . ';color:#fff;text-decoration:none;font-weight:700;padding:14px 22px;border-radius:10px;">' . $safeCtaLabel . '</a>
                         </td>
                     </tr>';
         }
 
         return '
-            <div style="margin:0;padding:0;background:#f3f7ff;font-family:Arial,Helvetica,sans-serif;color:#101828;">
+            <div style="margin:0;padding:0;background:#eff6ff;font-family:Arial,Helvetica,sans-serif;color:#101828;">
                 <div style="max-width:640px;margin:0 auto;padding:32px 16px;">
-                    <div style="background:#ffffff;border:1px solid #e5e7eb;border-radius:24px;overflow:hidden;box-shadow:0 16px 40px rgba(0,0,0,.08);">
-                        <div style="background:' . $accent . ';padding:24px 28px;color:#ffffff;">
+                    <div style="background:#ffffff;border:1px solid #dbeafe;border-radius:18px;overflow:hidden;box-shadow:0 16px 40px rgba(0,48,135,.12);">
+                        <div style="background:' . $brandPrimary . ';padding:24px 28px;color:#ffffff;">
                             <div style="font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;opacity:.85;">' . $safeEyebrow . '</div>
                             <div style="font-size:28px;line-height:1.15;font-weight:900;margin-top:8px;">' . $safeHeading . '</div>
                         </div>
@@ -213,6 +221,11 @@ function sams_build_branded_email(
                                         If you did not expect this email, you can safely ignore it.
                                     </td>
                                 </tr>' . $ctaHtml . '
+                                <tr>
+                                    <td style="padding-top:24px;font-size:12px;color:#6a7282;line-height:1.6;">
+                                        SAMS &middot; Student Assistant Management System &middot; NU Lipa
+                                    </td>
+                                </tr>
                             </table>
                         </div>
                     </div>
@@ -305,44 +318,42 @@ function sams_send_application_review_email(string $toEmail, string $toName, str
             throw $e2;
         }
 
-        function sams_send_application_submitted_email(
-            string $toEmail,
-            string $toName,
-            string $applicationReference,
-            string $termLabel
-        ): void {
-            require_once __DIR__ . '/../vendor/autoload.php';
-
-            $config = sams_mail_config();
-            $safeName = htmlspecialchars($toName, ENT_QUOTES, 'UTF-8');
-            $safeReference = htmlspecialchars($applicationReference, ENT_QUOTES, 'UTF-8');
-            $safeTerm = htmlspecialchars($termLabel, ENT_QUOTES, 'UTF-8');
-            $message = 'Hello ' . $safeName . ',<br><br>'
-                . 'Your Student Assistant application has been submitted successfully and is now pending review.<br><br>'
-                . '<strong>Application reference:</strong> ' . $safeReference . '<br>'
-                . '<strong>Term:</strong> ' . $safeTerm . '<br><br>'
-                . 'You may log in to SAMS to view your application status.';
-
-            $mailer = new PHPMailer\PHPMailer\PHPMailer(true);
-            $mailer->CharSet = 'UTF-8';
-            $mailer->setFrom($config['from_email'], $config['from_name']);
-            $mailer->addAddress($toEmail, $toName);
-            sams_configure_mailer($mailer, $config);
-            $mailer->isHTML(true);
-            $mailer->Subject = 'Your SAMS application was submitted';
-            $mailer->Body = sams_build_branded_email(
-                'SAMS Application Received',
-                'Application Submitted',
-                $message,
-                '#003087',
-                'Log in to SAMS',
-                'http://localhost/samss-main/login.php',
-                true
-            );
-            $mailer->AltBody = "Hello {$toName},\n\nYour Student Assistant application was submitted successfully.\nApplication reference: {$applicationReference}\nTerm: {$termLabel}\n\nLog in to SAMS to view your application status.";
-            $mailer->send();
-        }
     }
+}
+
+function sams_send_application_submitted_email(
+    string $toEmail,
+    string $toName,
+    string $applicationReference,
+    string $termLabel
+): void {
+    require_once __DIR__ . '/../vendor/autoload.php';
+
+    $config = sams_mail_config();
+    $message = 'Hello ' . htmlspecialchars($toName, ENT_QUOTES, 'UTF-8') . ',<br><br>'
+        . 'Your Student Assistant application has been submitted successfully and is now pending review.<br><br>'
+        . '<strong>Application reference:</strong> ' . htmlspecialchars($applicationReference, ENT_QUOTES, 'UTF-8') . '<br>'
+        . '<strong>Term:</strong> ' . htmlspecialchars($termLabel, ENT_QUOTES, 'UTF-8') . '<br><br>'
+        . 'You may log in to SAMS to view your application status.';
+
+    $mailer = new PHPMailer\PHPMailer\PHPMailer(true);
+    $mailer->CharSet = 'UTF-8';
+    $mailer->setFrom($config['from_email'], $config['from_name']);
+    $mailer->addAddress($toEmail, $toName);
+    sams_configure_mailer($mailer, $config);
+    $mailer->isHTML(true);
+    $mailer->Subject = 'Your SAMS application was submitted';
+    $mailer->Body = sams_build_branded_email(
+        'SAMS Application Received',
+        'Application Submitted',
+        $message,
+        '#003087',
+        'Log in to SAMS',
+        'http://localhost/samss-main/login.php',
+        true
+    );
+    $mailer->AltBody = "Hello {$toName},\n\nYour Student Assistant application was submitted successfully.\nApplication reference: {$applicationReference}\nTerm: {$termLabel}\n\nLog in to SAMS to view your application status.";
+    $mailer->send();
 }
 
 function sams_send_password_reset_email(string $toEmail, string $toName, string $resetLink): void

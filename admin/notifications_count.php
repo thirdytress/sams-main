@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../config/bootstrap.php';
+require_once __DIR__ . '/../config/admin_notifications.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -18,6 +19,7 @@ try {
 
     if ($adminUserId > 0) {
         sams_admin_meetings_generate_notifications($pdo, $adminUserId);
+        sams_admin_application_notifications_sync($pdo, $adminUserId);
     }
 
     $stmt = $pdo->query("SELECT COUNT(*) FROM student_reports WHERE status = 'open' AND is_new = 1");
@@ -32,6 +34,16 @@ try {
         $meetingCount = (int) $meetingStmt->fetchColumn();
     }
 
+    $applicationCount = 0;
+    if ($adminUserId > 0) {
+        $applicationStmt = $pdo->prepare(
+            'SELECT COUNT(*) FROM admin_application_notifications
+             WHERE admin_user_id = :admin_user_id AND is_read = 0'
+        );
+        $applicationStmt->execute(['admin_user_id' => $adminUserId]);
+        $applicationCount = (int) $applicationStmt->fetchColumn();
+    }
+
     $availabilityCount = 0;
     try {
         $availabilityCount = (int) $pdo->query(
@@ -41,7 +53,7 @@ try {
         $availabilityCount = 0;
     }
 
-    $count = $reportCount + $meetingCount + $availabilityCount;
+    $count = $reportCount + $meetingCount + $availabilityCount + $applicationCount;
     echo json_encode(['success' => true, 'count' => $count]);
 } catch (Throwable $e) {
     echo json_encode(['success' => false, 'message' => 'db error']);

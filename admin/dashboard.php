@@ -198,20 +198,20 @@ function sams_admin_dashboard_attendance_dot(string $status): string
 
             /* Neutral */
             --color-heading:         #101828;
-            --color-body:            #4a5565;
+            --color-body:            #374151;
             --color-label:           #364153;
-            --color-muted:           #6a7282;
+            --color-muted:           #4b5563;
             --color-border:          #e5e7eb;
             --color-bg-app:          #f9fafb;
             --color-white:           #ffffff;
 
             /* Status badges */
             --color-pending-bg:      #fef9c2;
-            --color-pending-text:    #a65f00;
+            --color-pending-text:    #111827;
             --color-interview-bg:    #dbeafe;
-            --color-interview-text:  #1447e6;
+            --color-interview-text:  #111827;
             --color-approved-bg:     #dcfce7;
-            --color-approved-text:   #008236;
+            --color-approved-text:   #111827;
 
             /* Presence dots */
             --color-present:         #00c950;
@@ -225,7 +225,7 @@ function sams_admin_dashboard_attendance_dot(string $status): string
             --color-alert-info-bg:   #eff6ff;
             --color-alert-info-bd:   #bedbff;
             --color-red-dot:         #fb2c36;
-            --color-green-up:        #00a63e;
+            --color-green-up:        #166534;
 
             /* Shadows */
             --shadow-card: 0 1px 3px rgba(0,0,0,.07), 0 1px 2px rgba(0,0,0,.05);
@@ -340,7 +340,7 @@ function sams_admin_dashboard_attendance_dot(string $status): string
         .sidebar__nav-icon { width: 20px; height: 20px; flex-shrink: 0; }
         .sidebar__nav-badge {
             background: #dbeafe;
-            color: var(--color-primary);
+            color: #111827;
             font-size: var(--font-xs);
             font-weight: 700;
             line-height: var(--lh-xs);
@@ -982,7 +982,7 @@ function sams_admin_dashboard_attendance_dot(string $status): string
                         <path d="M15 6.67A5 5 0 0 0 5 6.67C5 12.5 2.5 14.17 2.5 14.17h15S15 12.5 15 6.67Z" stroke="#364153" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                         <path d="M11.44 17.5a1.67 1.67 0 0 1-2.88 0" stroke="#364153" stroke-width="1.5" stroke-linecap="round"/>
                     </svg>
-                    <span class="topbar__notif-dot" aria-hidden="true"></span>
+                    <span class="topbar__notif-dot" aria-hidden="true" style="display:none"></span>
                 </div>
                 <div class="topbar__user-info" aria-label="Logged in user">
                     <div class="topbar__user-name"><?= htmlspecialchars($admin_name) ?></div>
@@ -1064,7 +1064,7 @@ function sams_admin_dashboard_attendance_dot(string $status): string
                         <h2 class="card__title" id="term-settings-title">Active Academic Term</h2>
                         <p class="section-note">Choose the term that will appear on new registrations, requirements, applications, and reports.</p>
                     </div>
-                    <strong style="color:#155dfc;"><?= htmlspecialchars($activeTermDisplay !== '' ? $activeTermDisplay : 'Not configured') ?></strong>
+                    <strong style="color:#111827;"><?= htmlspecialchars($activeTermDisplay !== '' ? $activeTermDisplay : 'Not configured') ?></strong>
                 </div>
                 <?php if ($termSettingsMessage !== ''): ?>
                     <div style="margin-bottom:14px;padding:12px 14px;border:1px solid #b9f8cf;border-radius:10px;background:#f0fdf4;color:#166534;font-size:14px;font-weight:700;" role="status">
@@ -1198,7 +1198,7 @@ function sams_admin_dashboard_attendance_dot(string $status): string
                         <a href="evaluation.php"   class="qa-btn"><span class="qa-btn__emoji" aria-hidden="true">✍️</span> Evaluate Students</a>
                     </div>
 
-                    <h3 style="margin:20px 0 10px;font-size:14px;color:#4a5565;">Upcoming Meetings</h3>
+                    <h3 style="margin:20px 0 10px;font-size:14px;color:#111827;">Upcoming Meetings</h3>
                     <div class="meeting-list" id="upcoming-meetings-list">
                         <?php if (empty($upcomingMeetings)): ?>
                             <div class="meeting-item">

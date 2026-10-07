@@ -210,7 +210,11 @@ if (isset($_GET['finalize'])) {
             $fullName = trim((string) ($step1['full_name'] ?? ''));
             [$firstName, $lastName] = sams_split_full_name($fullName);
             $course = trim((string) ($step2['course'] ?? ''));
-            $yearLevel = sams_map_year_level((string) ($step2['year_level'] ?? '1'));
+            $submittedYearLevel = (string) ($step2['year_level'] ?? '');
+            if (!in_array($submittedYearLevel, ['1', '2', '3', '4'], true)) {
+                throw new RuntimeException('Invalid year level. Please return to Academic Information and choose 1st Year to 4th Year.');
+            }
+            $yearLevel = sams_map_year_level($submittedYearLevel);
             $gpa = trim((string) ($step2['gpa'] ?? ''));
 
             // Default password is the student ID. Student can change it later if you add that feature.

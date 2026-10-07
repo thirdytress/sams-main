@@ -456,10 +456,14 @@ $dashboardTitle = $studentName !== '' ? $studentName . ' | Profile' : 'My Profil
             flex-direction: column;
             gap: var(--sp-12);
             flex-shrink: 0;
+            background: #003087;
+            position: relative;
+            z-index: 2;
         }
 
         .sidebar__user-card {
-            background: rgba(255,255,255,.10);
+            background: #0047ab;
+            border: 1px solid rgba(255,255,255,.22);
             border-radius: var(--radius-md);
             padding: var(--sp-16) var(--sp-16) var(--sp-8);
             display: flex;
@@ -471,7 +475,7 @@ $dashboardTitle = $studentName !== '' ? $studentName . ' | Profile' : 'My Profil
         .sidebar__user-label {
             font-size: var(--fs-sm);
             font-weight: 500;
-            color: var(--clr-text-light);
+            color: #dbeafe;
             line-height: 20px;
         }
 
@@ -485,7 +489,7 @@ $dashboardTitle = $studentName !== '' ? $studentName . ' | Profile' : 'My Profil
         .sidebar__user-id {
             font-size: var(--fs-xs);
             font-weight: 400;
-            color: var(--clr-text-light);
+            color: #dbeafe;
             line-height: 16px;
         }
 
@@ -496,7 +500,8 @@ $dashboardTitle = $studentName !== '' ? $studentName . ' | Profile' : 'My Profil
             height: 48px;
             padding-left: var(--sp-16);
             border-radius: var(--radius-md);
-            background: rgba(255,255,255,.10);
+            background: #0047ab;
+            border: 1px solid rgba(255,255,255,.22);
             width: 100%;
             transition: background 0.15s;
         }

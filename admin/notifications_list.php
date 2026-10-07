@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../config/bootstrap.php';
+require_once __DIR__ . '/../config/admin_notifications.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -17,7 +18,23 @@ try {
     $adminUserId = (int) ($user['user_id'] ?? 0);
     if ($adminUserId > 0) {
         sams_admin_meetings_generate_notifications($pdo, $adminUserId);
+        sams_admin_application_notifications_sync($pdo, $adminUserId);
     }
+
+    $applicationStmt = $pdo->prepare(
+        "SELECT n.notification_id, n.application_id, n.created_at,
+                s.student_id_number, u.first_name, u.last_name,
+                a.preferred_office, a.submitted_at
+         FROM admin_application_notifications n
+         INNER JOIN applications a ON a.application_id = n.application_id
+         INNER JOIN students s ON s.student_id = a.student_id
+         INNER JOIN users u ON u.user_id = s.user_id
+         WHERE n.admin_user_id = :admin_user_id AND n.is_read = 0
+         ORDER BY a.submitted_at DESC, n.notification_id DESC
+         LIMIT 8"
+    );
+    $applicationStmt->execute(['admin_user_id' => $adminUserId]);
+    $applicationRows = $applicationStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
     $reportStmt = $pdo->query(
         "SELECT sr.report_id, sr.student_code, sr.application_id, sr.notes, sr.created_at, COALESCE(a.preferred_office, '') AS preferred_office
@@ -69,6 +86,20 @@ try {
     }
 
     $items = [];
+    foreach ($applicationRows as $row) {
+        $name = trim((string) ($row['first_name'] ?? '') . ' ' . (string) ($row['last_name'] ?? ''));
+        $items[] = [
+            'type' => 'application',
+            'notification_id' => (int) ($row['notification_id'] ?? 0),
+            'application_id' => (int) ($row['application_id'] ?? 0),
+            'student_code' => (string) ($row['student_id_number'] ?? ''),
+            'title' => 'New applicant: ' . ($name !== '' ? $name : 'Student'),
+            'preferred_office' => (string) ($row['preferred_office'] ?? ''),
+            'snippet' => 'A new application is ready for review.',
+            'created_at' => (string) ($row['submitted_at'] ?? $row['created_at'] ?? ''),
+            'link_url' => 'application_view.php?application_id=' . (int) ($row['application_id'] ?? 0),
+        ];
+    }
     foreach ($reportStmt->fetchAll(PDO::FETCH_ASSOC) as $r) {
         $items[] = [
             'type' => 'report',

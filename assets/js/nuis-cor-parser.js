@@ -160,6 +160,7 @@
 
         const classSchedules = [];
         let inSubjectSection = false;
+        let currentSubjectCode = '';
 
         for (let i = 0; i < lines.length; i++) {
             const line = lines[i];
@@ -173,6 +174,14 @@
             }
 
             if (inSubjectSection) {
+                // NUIS prints continuation rows with an em dash instead of
+                // repeating the subject code. Keep the last subject for those
+                // rows so every day/time entry retains its subject.
+                const firstToken = line.split(/\s+/)[0] || '';
+                if (/^[A-Z0-9]{5,10}$/i.test(firstToken)) {
+                    currentSubjectCode = firstToken;
+                }
+
                 let match;
                 while ((match = scheduleRegex.exec(line)) !== null) {
                     const dayCode = match[1];
@@ -182,16 +191,9 @@
                     const endMin = parseTimeMinutes(endTimeStr);
                     const days = parseDayCodes(dayCode);
 
-                    // Extract subject code if present in the same line
-                    const parts = line.split(/\s+/);
-                    let subjectCode = '';
-                    if (parts[0] && /^[A-Z0-9]{5,10}$/i.test(parts[0])) {
-                        subjectCode = parts[0];
-                    }
-
                     classSchedules.push({
                         line: line,
-                        subjectCode: subjectCode,
+                        subjectCode: currentSubjectCode,
                         dayCode: dayCode,
                         days: days,
                         startTimeStr: startTimeStr,
@@ -203,6 +205,19 @@
                 }
             }
         }
+
+        // Some PDF text layers split the subject token into a separate text
+        // item, so the continuation-row lookup above may still be empty.
+        // Carry the last detected subject across any schedule continuation
+        // that has no subject code.
+        let lastSubjectCode = '';
+        classSchedules.forEach(schedule => {
+            if (schedule.subjectCode) {
+                lastSubjectCode = schedule.subjectCode;
+            } else if (lastSubjectCode) {
+                schedule.subjectCode = lastSubjectCode;
+            }
+        });
 
         // Calculate free time availability for Monday - Saturday
         // Morning standard window: 08:00 - 12:00 (480 - 720 min)

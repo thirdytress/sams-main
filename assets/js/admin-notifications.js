@@ -92,7 +92,7 @@
 
     var unread = Number(count) || 0;
     if (unread > 0) {
-      dot.style.display = '';
+      dot.style.display = 'inline-flex';
       dot.textContent = unread > 99 ? '99+' : String(unread);
       dot.setAttribute('aria-label', unread + ' new notifications');
     } else {
@@ -288,6 +288,14 @@
       postForm('notifications_mark_read.php', {
         type: 'report',
         report_id: String(reportId)
+      });
+      return;
+    }
+
+    if (type === 'application' && notificationId > 0) {
+      postForm('notifications_mark_read.php', {
+        type: 'application',
+        notification_id: String(notificationId)
       });
       return;
     }

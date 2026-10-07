@@ -85,6 +85,7 @@ $footerNavItems = [
 
     .topbar__notif-dot {
         position: absolute !important;
+        display: none;
         top: 5px !important;
         right: 5px !important;
         min-width: 16px !important;
@@ -183,4 +184,4 @@ $footerNavItems = [
         </ul>
     </div>
 </aside>
-<script src="../assets/js/admin-notifications.js?v=20260922" defer></script>
+<script src="../assets/js/admin-notifications.js?v=20261007" defer></script>

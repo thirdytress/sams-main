@@ -29,7 +29,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Required fields validation
     if ($values['course']          === '') $errors['course']          = 'Course/Program is required.';
-    if ($values['year_level']      === '') $errors['year_level']      = 'Year Level is required.';
+    if (!in_array($values['year_level'], ['1', '2', '3', '4'], true)) {
+        $errors['year_level'] = 'Choose a valid year level from 1st Year to 4th Year.';
+    }
     if ($values['units'] === '' || filter_var($values['units'], FILTER_VALIDATE_INT) === false || (int) $values['units'] < 1 || (int) $values['units'] > 40) {
         $errors['units'] = 'Enter your current units (1-40).';
     }
@@ -627,7 +629,6 @@ function isSelected(string $key, string $option, array $values): string {
                 <option value="2" <?php echo isSelected('year_level', '2', $values); ?>>2nd Year</option>
                 <option value="3" <?php echo isSelected('year_level', '3', $values); ?>>3rd Year</option>
                 <option value="4" <?php echo isSelected('year_level', '4', $values); ?>>4th Year</option>
-                <option value="5" <?php echo isSelected('year_level', '5', $values); ?>>5th Year</option>
               </select>
             </div>
             <?php echo err('year_level', $errors); ?>

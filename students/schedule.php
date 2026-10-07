@@ -468,15 +468,19 @@ if (!empty($studentSchedules)) {
       flex-direction: column;
       gap: var(--space-3);
       flex-shrink: 0;
+      background: #003087;
+      position: relative;
+      z-index: 2;
     }
     .sidebar__user {
-      background: rgba(255,255,255,.10);
+      background: #0047ab;
+      border: 1px solid rgba(255,255,255,.22);
       border-radius: var(--radius-md);
       padding: var(--space-4);
     }
-    .sidebar__user-label { font-size: var(--font-sm); font-weight: 500; color: var(--color-blue-pale); }
+    .sidebar__user-label { font-size: var(--font-sm); font-weight: 600; color: #dbeafe; }
     .sidebar__user-name  { font-size: var(--font-base); font-weight: 900; color: var(--color-white); }
-    .sidebar__user-id    { font-size: var(--font-xs);   font-weight: 400; color: var(--color-blue-pale); }
+    .sidebar__user-id    { font-size: var(--font-xs);   font-weight: 500; color: #dbeafe; }
     .sidebar__logout {
       display: flex;
       align-items: center;
@@ -484,7 +488,8 @@ if (!empty($studentSchedules)) {
       height: 48px;
       padding-left: var(--space-4);
       border-radius: var(--radius-md);
-      background: rgba(255,255,255,.10);
+      background: #0047ab;
+      border: 1px solid rgba(255,255,255,.22);
       border: none;
       font-size: var(--font-base);
       font-weight: 700;

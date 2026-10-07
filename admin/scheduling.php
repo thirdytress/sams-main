@@ -32,6 +32,7 @@ $dayShort = [
 $officeOptions = sams_office_options();
 
 $dutyScheduleHasOfficeColumn = false;
+$dutyScheduleHasOverrideNoteColumn = false;
 try {
     $dutyScheduleHasOfficeColumn = schedule_has_column($pdo, 'duty_schedules', 'office_name');
     if (!$dutyScheduleHasOfficeColumn) {
@@ -47,8 +48,13 @@ try {
              WHERE ds.office_name IS NULL OR ds.office_name = ""'
         );
     }
+    if (!schedule_has_column($pdo, 'duty_schedules', 'admin_override_note')) {
+        $pdo->exec('ALTER TABLE duty_schedules ADD COLUMN admin_override_note TEXT NULL');
+    }
+    $dutyScheduleHasOverrideNoteColumn = schedule_has_column($pdo, 'duty_schedules', 'admin_override_note');
 } catch (Throwable $columnException) {
     $dutyScheduleHasOfficeColumn = schedule_has_column($pdo, 'duty_schedules', 'office_name');
+    $dutyScheduleHasOverrideNoteColumn = schedule_has_column($pdo, 'duty_schedules', 'admin_override_note');
 }
 
 function h(?string $value): string
@@ -196,6 +202,14 @@ function schedule_has_column(PDO $pdo, string $table, string $column): bool
     return (int) $statement->fetchColumn() > 0;
 }
 
+function schedule_availability_duty_filter(PDO $pdo, string $alias = ''): string
+{
+    $prefix = $alias !== '' ? $alias . '.' : '';
+    return schedule_has_column($pdo, 'availability', 'is_available')
+        ? ' AND COALESCE(' . $prefix . 'is_available, 1) = 1'
+        : '';
+}
+
 function schedule_has_cor_document(PDO $pdo, int $applicationId): bool
 {
     static $cache = [];
@@ -278,6 +292,7 @@ function generate_schedules(PDO $pdo, int $adminId, bool $hasOfficeColumn, ?stri
                  FROM availability
                  WHERE application_id = :application_id
                      AND term_id = :term_id
+                     " . schedule_availability_duty_filter($pdo) . "
                  ORDER BY FIELD(day_of_week, 'Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'), start_time ASC"
     );
 
@@ -613,6 +628,7 @@ try {
                  FROM availability
                  WHERE application_id = :application_id
                    AND term_id = :term_id
+                   " . schedule_availability_duty_filter($pdo) . "
                  ORDER BY FIELD(day_of_week, 'Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'), start_time ASC"
             );
             $availStmt->execute(['application_id' => $applicationId, 'term_id' => (int)$appRow['term_id']]);
@@ -684,6 +700,7 @@ try {
                  FROM availability
                  WHERE application_id = :application_id
                    AND term_id = :term_id
+                   " . schedule_availability_duty_filter($pdo) . "
                  ORDER BY FIELD(day_of_week, 'Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'), start_time ASC"
             );
             $availStmt->execute(['application_id' => $applicationId, 'term_id' => (int)$appRow['term_id']]);
@@ -736,6 +753,7 @@ try {
             $studentId = (int)($_POST['student_id'] ?? 0);
             $officeName = trim((string) ($_POST['office_name'] ?? ''));
             $scheduleJson = trim((string)($_POST['schedule_json'] ?? ''));
+            $overrideNote = trim((string) ($_POST['admin_override_note'] ?? ''));
             
             if ($studentId <= 0) {
                 throw new RuntimeException('Invalid student selected.');
@@ -770,6 +788,70 @@ try {
             $termId = (int)$appRow['term_id'];
             $currentOffice = $officeName;
 
+            $previousScheduleStmt = $pdo->prepare(
+                'SELECT day_of_week, start_time, end_time
+                 FROM duty_schedules
+                 WHERE application_id = :application_id AND term_id = :term_id
+                 ORDER BY day_of_week, start_time'
+            );
+            $previousScheduleStmt->execute([
+                'application_id' => $applicationId,
+                'term_id' => $termId,
+            ]);
+            $previousSchedules = $previousScheduleStmt->fetchAll(PDO::FETCH_ASSOC);
+
+            $notesSelect = schedule_has_column($pdo, 'availability', 'notes')
+                ? 'notes'
+                : "'' AS notes";
+            $isAvailableSelect = schedule_has_column($pdo, 'availability', 'is_available')
+                ? 'is_available'
+                : '1 AS is_available';
+            $personalReasonStmt = $pdo->prepare(
+                "SELECT day_of_week, start_time, end_time, {$notesSelect}, {$isAvailableSelect}
+                 FROM availability
+                 WHERE application_id = :application_id AND term_id = :term_id"
+            );
+            $personalReasonStmt->execute([
+                'application_id' => $applicationId,
+                'term_id' => $termId,
+            ]);
+
+            $personalReasonOverlap = false;
+            foreach ($entries as $entry) {
+                $entryDay = schedule_day_label((string) ($entry['day_of_week'] ?? ''));
+                $entryStart = time_to_minutes((string) ($entry['time_start'] ?? $entry['start_time'] ?? ''));
+                $entryEnd = time_to_minutes((string) ($entry['time_end'] ?? $entry['end_time'] ?? ''));
+
+                if ($entryDay === '' || $entryEnd <= $entryStart) {
+                    throw new RuntimeException('Every duty schedule must have a valid day and time range.');
+                }
+
+                $personalReasonStmt->execute([
+                    'application_id' => $applicationId,
+                    'term_id' => $termId,
+                ]);
+                foreach ($personalReasonStmt->fetchAll(PDO::FETCH_ASSOC) as $availability) {
+                    $note = trim((string) ($availability['notes'] ?? ''));
+                    $isPersonalReason = (int) ($availability['is_available'] ?? 1) === 0 || $note !== '';
+                    if (!$isPersonalReason || schedule_day_label((string) $availability['day_of_week']) !== $entryDay) {
+                        continue;
+                    }
+
+                    $reasonStart = time_to_minutes((string) $availability['start_time']);
+                    $reasonEnd = time_to_minutes((string) $availability['end_time']);
+                    if ($entryStart < $reasonEnd && $entryEnd > $reasonStart) {
+                        $personalReasonOverlap = true;
+                    }
+                }
+            }
+
+            if ($personalReasonOverlap && $overrideNote === '') {
+                throw new RuntimeException('Please provide an admin note explaining why the Personal Reason is being overridden.');
+            }
+            if (mb_strlen($overrideNote) > 1000) {
+                throw new RuntimeException('The admin override note must be 1,000 characters or fewer.');
+            }
+
             $pdo->beginTransaction();
             try {
                 $updateOfficeStmt = $pdo->prepare(
@@ -785,36 +867,42 @@ try {
                 $delStmt->execute(['aid' => $applicationId]);
 
                 // Insert new schedules (as 'accepted' so they appear in real-time on supervisor dashboard)
+                $overrideColumns = $dutyScheduleHasOverrideNoteColumn ? ', admin_override_note' : '';
+                $overrideValues = $dutyScheduleHasOverrideNoteColumn ? ', :admin_override_note' : '';
                 if ($dutyScheduleHasOfficeColumn) {
                 $insertAppStmt = $pdo->prepare(
-                    'INSERT INTO duty_schedules (application_id, office_name, term_id, day_of_week, start_time, end_time, status) VALUES (:application_id, :office_name, :term_id, :day_of_week, :time_start, :time_end, "accepted")'
+                    'INSERT INTO duty_schedules (application_id, office_name, term_id, day_of_week, start_time, end_time, status' . $overrideColumns . ') VALUES (:application_id, :office_name, :term_id, :day_of_week, :time_start, :time_end, "accepted"' . $overrideValues . ')'
                 );
                 } else {
                 $insertAppStmt = $pdo->prepare(
-                    'INSERT INTO duty_schedules (application_id, term_id, day_of_week, start_time, end_time, status) VALUES (:application_id, :term_id, :day_of_week, :time_start, :time_end, "accepted")'
+                    'INSERT INTO duty_schedules (application_id, term_id, day_of_week, start_time, end_time, status' . $overrideColumns . ') VALUES (:application_id, :term_id, :day_of_week, :time_start, :time_end, "accepted"' . $overrideValues . ')'
                 );
                 }
 
                 foreach ($entries as $entry) {
                     $day = schedule_day_label((string)$entry['day_of_week']);
                     if ($dutyScheduleHasOfficeColumn) {
-                    $insertAppStmt->execute([
+                    $scheduleParams = [
                         'application_id' => $applicationId,
                         'office_name' => $currentOffice,
                         'term_id' => $termId,
                         'day_of_week' => $day,
                         'time_start' => (string)$entry['time_start'],
                         'time_end' => (string)$entry['time_end'],
-                    ]);
+                    ];
                     } else {
-                    $insertAppStmt->execute([
+                    $scheduleParams = [
                         'application_id' => $applicationId,
                         'term_id' => $termId,
                         'day_of_week' => $day,
                         'time_start' => (string)$entry['time_start'],
                         'time_end' => (string)$entry['time_end'],
-                    ]);
+                    ];
                     }
+                    if ($dutyScheduleHasOverrideNoteColumn) {
+                        $scheduleParams['admin_override_note'] = $overrideNote !== '' ? $overrideNote : null;
+                    }
+                    $insertAppStmt->execute($scheduleParams);
                 }
 
                 $pdo->commit();
@@ -831,20 +919,53 @@ try {
 
             // Send email notification to student
             try {
-                $emailDetails = ['Office' => $currentOffice];
-                $daysList = [];
-                foreach ($entries as $entry) {
-                    $day = (string)($entry['day_of_week'] ?? '');
-                    if ($day === '') continue;
-                    $start = date('g:i A', strtotime((string)($entry['time_start'] ?? '')));
-                    $end = date('g:i A', strtotime((string)($entry['time_end'] ?? '')));
-                    if (!isset($daysList[$day])) {
-                        $daysList[$day] = [];
-                    }
-                    $daysList[$day][] = "$start - $end";
+                $formatSchedule = static function (array $entry): string {
+                    $start = date('g:i A', strtotime((string) ($entry['time_start'] ?? $entry['start_time'] ?? '')));
+                    $end = date('g:i A', strtotime((string) ($entry['time_end'] ?? $entry['end_time'] ?? '')));
+                    return $start . ' - ' . $end;
+                };
+                $scheduleKey = static function (array $entry): string {
+                    return schedule_day_label((string) ($entry['day_of_week'] ?? ''))
+                        . '|' . substr((string) ($entry['time_start'] ?? $entry['start_time'] ?? ''), 0, 5)
+                        . '|' . substr((string) ($entry['time_end'] ?? $entry['end_time'] ?? ''), 0, 5);
+                };
+                $oldByKey = [];
+                $newByKey = [];
+                foreach ($previousSchedules as $previousSchedule) {
+                    $oldByKey[$scheduleKey($previousSchedule)] = $previousSchedule;
                 }
-                foreach ($daysList as $day => $times) {
-                    $emailDetails[$day] = implode(', ', $times);
+                foreach ($entries as $entry) {
+                    $newByKey[$scheduleKey($entry)] = $entry;
+                }
+
+                $added = [];
+                $removed = [];
+                foreach ($newByKey as $key => $entry) {
+                    if (!isset($oldByKey[$key])) {
+                        $added[] = schedule_day_label((string) $entry['day_of_week']) . ': ' . $formatSchedule($entry);
+                    }
+                }
+                foreach ($oldByKey as $key => $entry) {
+                    if (!isset($newByKey[$key])) {
+                        $removed[] = schedule_day_label((string) $entry['day_of_week']) . ': ' . $formatSchedule($entry);
+                    }
+                }
+
+                $emailDetails = [];
+                if (trim((string) ($appRow['preferred_office'] ?? '')) !== $currentOffice) {
+                    $emailDetails['Office Change'] = trim((string) ($appRow['preferred_office'] ?? '')) . ' -> ' . $currentOffice;
+                }
+                if ($added) {
+                    $emailDetails['Added Duty Hours'] = implode('; ', $added);
+                }
+                if ($removed) {
+                    $emailDetails['Removed Duty Hours'] = implode('; ', $removed);
+                }
+                if (!$emailDetails) {
+                    $emailDetails['Schedule Changes'] = 'No duty-hour time changes were detected.';
+                }
+                if ($personalReasonOverlap && $overrideNote !== '') {
+                    $emailDetails['Admin Explanation'] = $overrideNote;
                 }
 
                 sams_send_schedule_email(
@@ -1006,6 +1127,9 @@ if (isset($_SESSION['scheduling_error'])) {
 
 // Only fetch schedules if a specific student is selected
 if ($selectedStudentId > 0) {
+    $overrideNoteSelect = $dutyScheduleHasOverrideNoteColumn
+        ? 'ds.admin_override_note'
+        : "'' AS admin_override_note";
     $scheduleSql = "SELECT
         ds.duty_id as id,
         a.student_id,
@@ -1015,6 +1139,7 @@ if ($selectedStudentId > 0) {
         ds.start_time AS time_start,
         ds.end_time AS time_end,
         ds.status,
+        {$overrideNoteSelect},
         ds.created_at as assigned_at,
         ds.student_response_date as responded_at,
         ROUND(TIMESTAMPDIFF(MINUTE, ds.start_time, ds.end_time) / 60, 2) AS required_hours,
@@ -1127,7 +1252,9 @@ if ($selectedStudentId > 0) {
     $appStmt->execute(['sid' => $selectedStudentId]);
     $selectedPreferred = $appStmt->fetch(PDO::FETCH_ASSOC) ?: null;
     if ($selectedPreferred) {
-        $availStmt = $pdo->prepare("SELECT day_of_week, start_time AS time_start, end_time AS time_end FROM availability WHERE application_id = :aid AND term_id = :term_id ORDER BY FIELD(day_of_week, 'Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'), start_time ASC");
+        $availabilityNotesSelect = schedule_has_column($pdo, 'availability', 'notes') ? 'notes' : "'' AS notes";
+        $availabilityFlagSelect = schedule_has_column($pdo, 'availability', 'is_available') ? 'is_available' : '1 AS is_available';
+        $availStmt = $pdo->prepare("SELECT day_of_week, start_time AS time_start, end_time AS time_end, {$availabilityNotesSelect}, {$availabilityFlagSelect} FROM availability WHERE application_id = :aid AND term_id = :term_id ORDER BY FIELD(day_of_week, 'Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'), start_time ASC");
         $availStmt->execute(['aid' => (int)$selectedPreferred['application_id'], 'term_id' => (int)$selectedPreferred['term_id']]);
         $selectedPreferred['availability'] = $availStmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -1350,7 +1477,7 @@ $hours = range($calendarStartHour, $calendarEndHour); // include last hour (e.g.
         .cor-no-data{text-align:center;padding:40px 20px;color:var(--color-muted);font-size:14px}
     </style>
     <script src="../assets/js/pdf.min.js"></script>
-    <script src="../assets/js/nuis-cor-parser.js"></script>
+    <script src="../assets/js/nuis-cor-parser.js?v=20261007-2"></script>
     <script>if(window.pdfjsLib){window.pdfjsLib.GlobalWorkerOptions.workerSrc='../assets/js/pdf.worker.min.js';}</script>
 </head>
 <body>
@@ -1806,7 +1933,8 @@ function openEditModal(studentId) {
             var dayAvail = [];
             for (var a = 0; a < studentAvailability.length; a++) {
                 if (studentAvailability[a].day_of_week === days[d]) {
-                    dayAvail.push(studentAvailability[a].time_start.substring(0,5) + '-' + studentAvailability[a].time_end.substring(0,5));
+                    var personal = String(studentAvailability[a].is_available) === '0' || String(studentAvailability[a].notes || '').trim() !== '';
+                    dayAvail.push((personal ? 'Personal Reason ' : '') + studentAvailability[a].time_start.substring(0,5) + '-' + studentAvailability[a].time_end.substring(0,5));
                 }
             }
             if (dayAvail.length > 0) {
@@ -1820,6 +1948,8 @@ function openEditModal(studentId) {
         hint.style.color = '#b91c1c';
     }
 
+    document.getElementById('admin_override_note').value = '';
+    document.getElementById('admin_override_notice').style.display = 'none';
     document.getElementById('editModal').style.display = 'flex';
 }
 
@@ -1863,6 +1993,24 @@ document.addEventListener('DOMContentLoaded', function() {
             if (entries.length === 0) {
                 e.preventDefault();
                 alert('Please select at least one schedule block.');
+                return false;
+            }
+
+            var overlapsPersonalReason = entries.some(function(entry) {
+                var entryStart = entry.time_start;
+                var entryEnd = entry.time_end;
+                return studentAvailability.some(function(availability) {
+                    if (availability.day_of_week !== entry.day_of_week) return false;
+                    var isPersonal = String(availability.is_available) === '0' || String(availability.notes || '').trim() !== '';
+                    return isPersonal && entryStart < String(availability.time_end).substring(0, 5)
+                        && entryEnd > String(availability.time_start).substring(0, 5);
+                });
+            });
+            var overrideNote = document.getElementById('admin_override_note');
+            if (overlapsPersonalReason && !overrideNote.value.trim()) {
+                e.preventDefault();
+                document.getElementById('admin_override_notice').style.display = 'block';
+                overrideNote.focus();
                 return false;
             }
             
@@ -1973,7 +2121,13 @@ function corRenderParsedData(parsed) {
     html += '<div class="cor-section-title"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg> Class Schedules from COR (' + (parsed.classSchedules ? parsed.classSchedules.length : 0) + ' found)</div>';
     if (parsed.classSchedules && parsed.classSchedules.length > 0) {
         html += '<table class="cor-subjects-table"><thead><tr><th>Subject</th><th>Day(s)</th><th>Time</th></tr></thead><tbody>';
+        var lastSubjectCode = '';
         parsed.classSchedules.forEach(function(cls) {
+            if (cls.subjectCode && cls.subjectCode !== '—') {
+                lastSubjectCode = cls.subjectCode;
+            } else if (lastSubjectCode) {
+                cls.subjectCode = lastSubjectCode;
+            }
             html += '<tr>';
             html += '<td><strong>' + escHtml(cls.subjectCode || '—') + '</strong></td>';
             html += '<td>' + escHtml(cls.days.join(', ')) + '</td>';
@@ -2228,17 +2382,93 @@ document.addEventListener('keydown', function (event) {
         padding: 20px;
     "
 >
+    <style>
+        #edit_availability_table {
+            width: 100%;
+            min-width: 760px;
+            table-layout: fixed;
+            border-collapse: separate;
+            border-spacing: 0;
+        }
+        #edit_availability_table th,
+        #edit_availability_table td {
+            padding: 9px 7px;
+            vertical-align: middle;
+        }
+        #edit_availability_table th {
+            font-size: 12px;
+            letter-spacing: .04em;
+            text-transform: uppercase;
+            color: #475569;
+            white-space: nowrap;
+        }
+        #edit_availability_table th:nth-child(1),
+        #edit_availability_table td:nth-child(1) { width: 94px; }
+        #edit_availability_table th:nth-child(2),
+        #edit_availability_table th:nth-child(5),
+        #edit_availability_table td:nth-child(2),
+        #edit_availability_table td:nth-child(5) { width: 72px; text-align: center; }
+        #edit_availability_table th:nth-child(n+3),
+        #edit_availability_table td:nth-child(n+3) { width: 124px; }
+        #edit_availability_table tbody tr:hover td { background: #f8fbff; }
+        #edit_availability_table tbody tr[data-index] td:first-child {
+            font-weight: 800;
+            color: #0f172a;
+        }
+        #edit_availability_table input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            accent-color: #155dfc;
+            cursor: pointer;
+        }
+        #edit_availability_table .time-wrapper {
+            width: 100%;
+        }
+        #edit_availability_table input[type="time"] {
+            display: block;
+            width: 100%;
+            min-width: 104px;
+            height: 36px;
+            padding: 0 7px;
+            border: 1px solid #cbd5e1;
+            border-radius: 10px;
+            background: #fff;
+            color: #0f172a;
+            font: 600 13px/1 'Inter', sans-serif;
+            letter-spacing: .01em;
+            cursor: pointer;
+        }
+        #edit_availability_table input[type="time"]:hover {
+            border-color: #93c5fd;
+            background: #f8fbff;
+        }
+        #edit_availability_table input[type="time"]:focus {
+            outline: 3px solid rgba(37, 99, 235, .16);
+            border-color: #2563eb;
+        }
+        @media (max-width: 760px) {
+            #editModal > div {
+                padding: 20px !important;
+            }
+            #edit_availability_table {
+                min-width: 740px;
+            }
+            #edit_availability_table input[type="time"] {
+                min-width: 100px;
+            }
+        }
+    </style>
 
     <div
         style="
             background: #ffffff;
-            padding: 32px;
+            padding: 28px;
             border-radius: 20px;
             width: 100%;
-            max-width: 800px;
+            max-width: 980px;
             box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
             font-family: 'Inter', sans-serif;
-            max-height: 90vh;
+            max-height: 92vh;
             display: flex;
             flex-direction: column;
         "
@@ -2280,6 +2510,16 @@ document.addEventListener('keydown', function (event) {
             </div>
 
             <div id="availability_hint" style="font-size: 13.5px; margin-bottom: 16px; padding: 14px 16px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; color: #047857; flex-shrink: 0;"></div>
+
+            <div id="admin_override_notice" style="display:none;margin-bottom:14px;padding:12px 14px;border:1px solid #f59e0b;border-radius:12px;background:#fffbeb;color:#92400e;font-size:13px;line-height:1.5;">
+                This schedule overlaps a student Personal Reason. Add a short admin note explaining why the request is being overridden before saving.
+            </div>
+            <div style="margin-bottom:16px;padding:14px 16px;border:1px solid #dbeafe;border-radius:12px;background:#f8fbff;flex-shrink:0;">
+                <label for="admin_override_note" style="display:block;font-size:12px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#1e40af;margin-bottom:6px;">
+                    Admin note for Personal Reason override <span style="font-weight:600;color:#64748b;text-transform:none;">(required only when overlapping)</span>
+                </label>
+                <textarea name="admin_override_note" id="admin_override_note" maxlength="1000" rows="2" placeholder="Example: Office coverage is required during this period; alternative duty hours were unavailable." style="width:100%;resize:vertical;border:1px solid #bfdbfe;border-radius:10px;padding:10px 12px;font:inherit;font-size:13px;color:#0f172a;"></textarea>
+            </div>
             
             <div style="overflow-y: auto; flex: 1; border: 1px solid var(--color-border); border-radius: 12px; margin-bottom: 24px;">
                 <table class="availability-table" id="edit_availability_table" style="margin-top:0;">

@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../config/bootstrap.php';
+require_once __DIR__ . '/../config/admin_notifications.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -21,10 +22,11 @@ if ($adminUserId <= 0) {
 
 $notificationId = (int) ($_POST['notification_id'] ?? 0);
 $reportId = (int) ($_POST['report_id'] ?? 0);
+$applicationId = (int) ($_POST['application_id'] ?? 0);
 $type = trim((string) ($_POST['type'] ?? ''));
 $markAll = !empty($_POST['mark_all']);
 
-if (!$markAll && ($type === '' || ($notificationId <= 0 && $reportId <= 0))) {
+if (!$markAll && ($type === '' || ($notificationId <= 0 && $reportId <= 0 && $applicationId <= 0))) {
     http_response_code(400);
     echo json_encode(['success' => false, 'message' => 'invalid payload']);
     exit;
@@ -34,6 +36,14 @@ $pdo = sams_pdo();
 
 try {
     if ($markAll) {
+        sams_admin_application_notifications_sync($pdo, $adminUserId);
+        $stmtApplications = $pdo->prepare(
+            'UPDATE admin_application_notifications
+             SET is_read = 1, read_at = NOW()
+             WHERE admin_user_id = :admin_user_id AND is_read = 0'
+        );
+        $stmtApplications->execute(['admin_user_id' => $adminUserId]);
+
         // Mark all meeting notifications for current admin as read
         $stmtMeetings = $pdo->prepare(
             'UPDATE admin_meeting_notifications
@@ -77,6 +87,23 @@ try {
              LIMIT 1'
         );
         $stmt->execute(['report_id' => $reportId]);
+
+        echo json_encode(['success' => true]);
+        exit;
+    }
+
+    if ($type === 'application' && $notificationId > 0) {
+        $stmt = $pdo->prepare(
+            'UPDATE admin_application_notifications
+             SET is_read = 1, read_at = NOW()
+             WHERE notification_id = :notification_id
+               AND admin_user_id = :admin_user_id
+             LIMIT 1'
+        );
+        $stmt->execute([
+            'notification_id' => $notificationId,
+            'admin_user_id' => $adminUserId,
+        ]);
 
         echo json_encode(['success' => true]);
         exit;
