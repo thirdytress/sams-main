@@ -3,6 +3,107 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/config/bootstrap.php';
 
+$submission = $_SESSION['registration_submission'] ?? [];
+if (isset($_GET['submitted']) && !empty($submission['success'])) {
+    $submittedName = htmlspecialchars((string) ($submission['student_name'] ?? 'Applicant'), ENT_QUOTES, 'UTF-8');
+    $submittedNumber = htmlspecialchars((string) ($submission['student_number'] ?? ''), ENT_QUOTES, 'UTF-8');
+    $submittedApplicationId = (int) ($submission['application_id'] ?? 0);
+    ?>
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Application Submitted | NU SAMS</title>
+        <style>
+            :root { font-family: Inter, Arial, sans-serif; color: #101828; }
+            * { box-sizing: border-box; }
+            body {
+                min-height: 100vh;
+                margin: 0;
+                display: grid;
+                place-items: center;
+                padding: 24px;
+                background: linear-gradient(135deg, #eff6ff, #fff, #fffbeb);
+            }
+            .submission-backdrop {
+                position: fixed;
+                inset: 0;
+                background: rgba(0, 24, 67, .38);
+                backdrop-filter: blur(4px);
+            }
+            .submission-modal {
+                position: relative;
+                z-index: 1;
+                width: min(100%, 520px);
+                padding: 36px;
+                text-align: center;
+                background: #fff;
+                border: 1px solid #dbeafe;
+                border-radius: 20px;
+                box-shadow: 0 24px 70px rgba(0, 30, 80, .22);
+            }
+            .submission-icon {
+                width: 72px;
+                height: 72px;
+                margin: 0 auto 20px;
+                display: grid;
+                place-items: center;
+                color: #166534;
+                background: #dcfce7;
+                border: 8px solid #f0fdf4;
+                border-radius: 50%;
+                font-size: 34px;
+                font-weight: 900;
+            }
+            h1 { margin: 0 0 10px; color: #003087; font-size: 26px; }
+            p { margin: 0 auto 20px; color: #4a5565; line-height: 1.6; }
+            .submission-reference {
+                margin: 20px 0;
+                padding: 14px;
+                color: #1e3a8a;
+                background: #eff6ff;
+                border: 1px solid #bfdbfe;
+                border-radius: 12px;
+                font-size: 14px;
+                line-height: 1.7;
+            }
+            .submission-reference strong { display: block; color: #003087; font-size: 18px; }
+            .submission-actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+            .submission-actions a {
+                display: inline-block;
+                padding: 12px 18px;
+                border-radius: 10px;
+                font-weight: 700;
+                text-decoration: none;
+            }
+            .submission-primary { color: #fff; background: #003087; }
+            .submission-secondary { color: #003087; background: #eff6ff; }
+        </style>
+    </head>
+    <body>
+        <div class="submission-backdrop" aria-hidden="true"></div>
+        <main class="submission-modal" role="dialog" aria-modal="true" aria-labelledby="submission-title">
+            <div class="submission-icon" aria-hidden="true">✓</div>
+            <h1 id="submission-title">Application Submitted Successfully</h1>
+            <p>Thank you, <?= $submittedName ?>. Your requirements and application details have been received and are now pending review.</p>
+            <div class="submission-reference">
+                Application Reference
+                <strong><?= $submittedApplicationId > 0 ? 'APP-' . $submittedApplicationId : 'Pending' ?></strong>
+                <?php if ($submittedNumber !== ''): ?>
+                    Student No.: <?= $submittedNumber ?>
+                <?php endif; ?>
+            </div>
+            <div class="submission-actions">
+                <a class="submission-secondary" href="index.php">Back to Home</a>
+            </div>
+        </main>
+    </body>
+    </html>
+    <?php
+    exit;
+}
+
 if (empty($_SESSION['sams_registration']['step1'])) {
     header('Location: register.php');
     exit;

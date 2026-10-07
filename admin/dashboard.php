@@ -14,6 +14,51 @@ $pdo = sams_pdo();
 $admin_name  = (string) ($currentUser['name'] ?? 'SAMS Admin');
 $admin_role  = 'SDAO Head';
 $department  = 'NU Lipa - Student Development and Activities Office';
+$termOptions = ['1st Term', '2nd Term', '3rd Term'];
+$termSettingsMessage = '';
+$termSettingsError = '';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'update_active_term') {
+    $selectedTermName = trim((string) ($_POST['term_name'] ?? ''));
+    if (!in_array($selectedTermName, $termOptions, true)) {
+        $termSettingsError = 'Please choose a valid academic term.';
+    } else {
+        try {
+            $pdo->beginTransaction();
+            $activeTermStatement = $pdo->query(
+                'SELECT term_id FROM terms WHERE is_active = 1 ORDER BY term_id DESC LIMIT 1'
+            );
+            $activeTermId = (int) ($activeTermStatement->fetchColumn() ?: 0);
+            if ($activeTermId <= 0) {
+                $activeTermId = (int) $pdo->query('SELECT term_id FROM terms ORDER BY term_id DESC LIMIT 1')->fetchColumn();
+            }
+            if ($activeTermId <= 0) {
+                throw new RuntimeException('No term record is available to update.');
+            }
+
+            $pdo->exec('UPDATE terms SET is_active = 0');
+            $updateTermStatement = $pdo->prepare(
+                'UPDATE terms SET term_name = :term_name, is_active = 1 WHERE term_id = :term_id'
+            );
+            $updateTermStatement->execute([
+                'term_name' => $selectedTermName,
+                'term_id' => $activeTermId,
+            ]);
+            $pdo->commit();
+            $termSettingsMessage = $selectedTermName . ' is now the active registration term.';
+        } catch (Throwable $exception) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            $termSettingsError = 'Unable to update the active term: ' . $exception->getMessage();
+        }
+    }
+}
+
+$activeTerm = sams_current_term($pdo);
+$activeTermName = trim((string) ($activeTerm['term_name'] ?? ''));
+$activeTermYear = trim((string) ($activeTerm['term_year'] ?? ''));
+$activeTermDisplay = trim($activeTermName . ' ' . $activeTermYear);
 
 $activeStudents = (int) $pdo->query('SELECT COUNT(*) FROM students WHERE is_enrolled = 1')->fetchColumn();
 $pendingApplicationsStmt = $pdo->prepare('SELECT COUNT(*) FROM applications WHERE status = :status');
@@ -1010,6 +1055,43 @@ function sams_admin_dashboard_attendance_dot(string $status): string
                         <div class="hero__snapshot-footer-sub"><?php echo (int) $pendingApplications > 0 ? 'Open the applications queue to clear the current review stack.' : 'No urgent application queue right now. Use the quick actions below.'; ?></div>
                     </div>
                 </div>
+            </section>
+
+            <section class="card" aria-labelledby="term-settings-title">
+                <div class="card__header">
+                    <div>
+                        <div class="section-kicker">Registration settings</div>
+                        <h2 class="card__title" id="term-settings-title">Active Academic Term</h2>
+                        <p class="section-note">Choose the term that will appear on new registrations, requirements, applications, and reports.</p>
+                    </div>
+                    <strong style="color:#155dfc;"><?= htmlspecialchars($activeTermDisplay !== '' ? $activeTermDisplay : 'Not configured') ?></strong>
+                </div>
+                <?php if ($termSettingsMessage !== ''): ?>
+                    <div style="margin-bottom:14px;padding:12px 14px;border:1px solid #b9f8cf;border-radius:10px;background:#f0fdf4;color:#166534;font-size:14px;font-weight:700;" role="status">
+                        <?= htmlspecialchars($termSettingsMessage) ?>
+                    </div>
+                <?php endif; ?>
+                <?php if ($termSettingsError !== ''): ?>
+                    <div style="margin-bottom:14px;padding:12px 14px;border:1px solid #fecaca;border-radius:10px;background:#fef2f2;color:#991b1b;font-size:14px;font-weight:700;" role="alert">
+                        <?= htmlspecialchars($termSettingsError) ?>
+                    </div>
+                <?php endif; ?>
+                <form method="post" style="display:flex;align-items:end;gap:12px;flex-wrap:wrap;">
+                    <input type="hidden" name="action" value="update_active_term">
+                    <label style="display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:700;color:#364153;">
+                        Registration term
+                        <select name="term_name" required style="min-width:190px;padding:10px 12px;border:1px solid #d1d5dc;border-radius:10px;background:#fff;font:inherit;">
+                            <?php foreach ($termOptions as $termOption): ?>
+                                <option value="<?= htmlspecialchars($termOption) ?>" <?= $activeTermName === $termOption ? 'selected' : '' ?>>
+                                    <?= htmlspecialchars($termOption) ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </label>
+                    <button type="submit" style="min-height:42px;padding:0 16px;border:0;border-radius:10px;background:#155dfc;color:#fff;font:inherit;font-weight:700;cursor:pointer;">
+                        Save Active Term
+                    </button>
+                </form>
             </section>
 
             <!-- STAT CARDS -->

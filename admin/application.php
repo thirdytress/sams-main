@@ -74,11 +74,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $activateStatement->execute(['application_id' => $applicationId]);
 
         // Automatically populate duty_schedules based on student's availability
+        $availabilityFilter = sams_column_exists($pdo, 'availability', 'is_available')
+            ? ' AND is_available = 1'
+            : '';
         $availStmt = $pdo->prepare(
             "SELECT day_of_week, start_time AS time_start, end_time AS time_end
              FROM availability
              WHERE application_id = :application_id
-               AND term_id = :term_id"
+               AND term_id = :term_id{$availabilityFilter}"
         );
         $availStmt->execute([
             'application_id' => $applicationId,
@@ -263,6 +266,9 @@ foreach ($applicationCountsStatement->fetchAll(PDO::FETCH_ASSOC) as $countRow) {
   }
 }
 
+$availabilityHoursFilter = sams_column_exists($pdo, 'availability', 'is_available')
+  ? ' AND is_available = 1'
+  : '';
 $applicationsStatement = $pdo->query(
   "SELECT
     a.application_id AS application_id,
@@ -288,7 +294,9 @@ $applicationsStatement = $pdo->query(
     s.year_level,
     t.term_name,
     t.term_year AS school_year,
-    (SELECT COALESCE(SUM(TIMESTAMPDIFF(MINUTE, start_time, end_time)), 0) / 60 FROM availability WHERE application_id = a.application_id) AS total_available_hours
+    (SELECT COALESCE(SUM(TIMESTAMPDIFF(MINUTE, start_time, end_time)), 0) / 60
+     FROM availability
+     WHERE application_id = a.application_id{$availabilityHoursFilter}) AS total_available_hours
   FROM applications a
   INNER JOIN students s ON s.student_id = a.student_id
   INNER JOIN users u ON u.user_id = s.user_id
@@ -2051,10 +2059,29 @@ $pendingApplications = (int) $applicationCounts['pending'];
       ul.style.cssText = 'list-style:none;padding:0;margin:0;';
       list.forEach(function (row) {
         var li = document.createElement('li');
-        li.style.padding = '6px 0';
+        li.style.padding = '8px 0';
+        li.style.borderBottom = '1px solid #e5e7eb';
         var start = formatTime12Hour(row.time_start || row.start_time || '');
         var end = formatTime12Hour(row.time_end || row.end_time || '');
-        li.textContent = (row.day_of_week || '') + ': ' + start + ' — ' + end;
+        var note = row.notes === null || row.notes === undefined ? '' : String(row.notes).trim();
+        var type = note !== '' || String(row.is_available) === '0' ? 'Personal Reason' : 'Duty Hours';
+
+        var heading = document.createElement('div');
+        heading.style.cssText = 'font-weight:700;color:#1e3a8a;';
+        heading.textContent = (row.day_of_week || '') + ': ' + start + ' — ' + end;
+        li.appendChild(heading);
+
+        var typeLabel = document.createElement('span');
+        typeLabel.style.cssText = 'display:inline-block;margin-top:4px;padding:3px 8px;border-radius:999px;background:' + (note !== '' ? '#fef3c7;color:#92400e;' : '#dcfce7;color:#166534;') + 'font-size:11px;font-weight:800;text-transform:uppercase;';
+        typeLabel.textContent = type;
+        li.appendChild(typeLabel);
+
+        if (note !== '') {
+          var noteText = document.createElement('div');
+          noteText.style.cssText = 'margin-top:6px;color:#475569;font-size:12px;line-height:1.45;white-space:pre-wrap;';
+          noteText.textContent = 'Note: ' + note;
+          li.appendChild(noteText);
+        }
         ul.appendChild(li);
       });
       container.appendChild(ul);

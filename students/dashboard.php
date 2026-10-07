@@ -78,6 +78,12 @@ if (!$currentUser || ($currentUser['role'] ?? null) !== 'student') {
   exit;
 }
 
+$pendingApplicationStatus = strtolower((string) ($currentUser['application_status'] ?? ''));
+if (in_array($pendingApplicationStatus, ['pending', 'rejected'], true)) {
+  header('Location: ../status.php');
+  exit;
+}
+
 $pdo = sams_pdo();
 $studentInfoStmt = $pdo->prepare(
   'SELECT s.student_id AS student_db_id, s.student_id_number AS student_code, u.first_name, u.last_name

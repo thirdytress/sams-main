@@ -265,30 +265,6 @@ unset($_SESSION['sams_app_flash'], $_SESSION['sams_app_error']);
             font-size: 13px;
         }
 
-        .note-chip {
-            display: inline-flex;
-            align-items: center;
-            border-radius: 999px;
-            padding: 4px 10px;
-            font-size: 11px;
-            font-weight: 800;
-            letter-spacing: 0.02em;
-            text-transform: uppercase;
-            margin-top: 8px;
-        }
-
-        .note-chip--yes {
-            background: #dcfce7;
-            color: #166534;
-            border: 1px solid #86efac;
-        }
-
-        .note-chip--no {
-            background: #f1f5f9;
-            color: #475569;
-            border: 1px solid #cbd5e1;
-        }
-
         .row__actions {
             margin-top: 10px;
             display: flex;
@@ -354,30 +330,37 @@ unset($_SESSION['sams_app_flash'], $_SESSION['sams_app_error']);
             font-weight: 700;
         }
 
-        .slot-item__actions {
-            margin-top: 8px;
-            display: flex;
-            justify-content: flex-end;
-        }
-
         .slot-empty {
             color: var(--muted);
             font-size: 12px;
+            padding: 8px;
+            border: 1px dashed #cbd5e1;
+            border-radius: 9px;
+            background: #f8fafc;
         }
 
-        .note-btn {
-            border: 1px solid #bfdbfe;
-            background: #eff6ff;
-            color: #1e40af;
-            border-radius: 8px;
-            padding: 6px 10px;
+        .slot-item__type {
+            display: inline-flex;
+            align-items: center;
+            margin-bottom: 6px;
+            border-radius: 999px;
+            padding: 4px 9px;
+            background: #dcfce7;
+            color: #166534;
+            font-size: 11px;
+            font-weight: 800;
+            letter-spacing: .02em;
+            text-transform: uppercase;
+        }
+
+        .slot-item__note {
+            margin-top: 7px;
+            padding-top: 7px;
+            border-top: 1px solid #dbeafe;
+            color: #475569;
             font-size: 12px;
-            font-weight: 700;
-            cursor: pointer;
-        }
-
-        .note-btn:hover {
-            background: #dbeafe;
+            line-height: 1.45;
+            white-space: pre-wrap;
         }
 
         .doc-link {
@@ -409,82 +392,6 @@ unset($_SESSION['sams_app_flash'], $_SESSION['sams_app_error']);
             color: var(--muted);
             font-size: 14px;
             font-weight: 600;
-        }
-
-        .note-modal {
-            position: fixed;
-            inset: 0;
-            background: rgba(15, 23, 42, 0.45);
-            display: none;
-            align-items: center;
-            justify-content: center;
-            padding: 16px;
-            z-index: 1200;
-        }
-
-        .note-modal.is-open {
-            display: flex;
-        }
-
-        .note-modal__panel {
-            width: min(560px, 100%);
-            background: #ffffff;
-            border-radius: 14px;
-            border: 1px solid var(--border);
-            box-shadow: 0 18px 48px rgba(15, 23, 42, 0.24);
-            overflow: hidden;
-        }
-
-        .note-modal__header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 10px;
-            padding: 14px 16px;
-            border-bottom: 1px solid var(--border);
-            background: #f8fbff;
-        }
-
-        .note-modal__title {
-            margin: 0;
-            font-size: 16px;
-            font-weight: 800;
-            color: #0f172a;
-        }
-
-        .note-modal__close {
-            border: 1px solid var(--border);
-            background: #ffffff;
-            color: #334155;
-            border-radius: 8px;
-            width: 34px;
-            height: 34px;
-            font-size: 20px;
-            line-height: 1;
-            cursor: pointer;
-        }
-
-        .note-modal__body {
-            padding: 16px;
-        }
-
-        .note-modal__slot {
-            font-size: 13px;
-            color: #475569;
-            margin-bottom: 10px;
-            font-weight: 600;
-        }
-
-        .note-modal__content {
-            white-space: pre-wrap;
-            border: 1px solid var(--border);
-            border-radius: 10px;
-            background: #fbfdff;
-            padding: 12px;
-            font-size: 14px;
-            line-height: 1.5;
-            color: #0f172a;
-            min-height: 90px;
         }
 
         @media (max-width: 960px) {
@@ -568,19 +475,6 @@ unset($_SESSION['sams_app_flash'], $_SESSION['sams_app_error']);
     </div>
 </div>
 
-<div class="note-modal" id="availability-note-modal" aria-hidden="true" role="dialog" aria-labelledby="availability-note-title">
-    <div class="note-modal__panel" role="document">
-        <div class="note-modal__header">
-            <h3 class="note-modal__title" id="availability-note-title">Availability Note</h3>
-            <button type="button" class="note-modal__close" id="availability-note-close" aria-label="Close note modal">&times;</button>
-        </div>
-        <div class="note-modal__body">
-            <div class="note-modal__slot" id="availability-note-slot"></div>
-            <div class="note-modal__content" id="availability-note-content"></div>
-        </div>
-    </div>
-</div>
-
 <script>
 (function () {
     var applicationId = <?= (int) $applicationId ?>;
@@ -590,10 +484,6 @@ unset($_SESSION['sams_app_flash'], $_SESSION['sams_app_error']);
     var infoContainer = document.getElementById('app-info');
     var docsContainer = document.getElementById('docs');
     var availabilityContainer = document.getElementById('availability');
-    var noteModal = document.getElementById('availability-note-modal');
-    var noteModalClose = document.getElementById('availability-note-close');
-    var noteModalSlot = document.getElementById('availability-note-slot');
-    var noteModalContent = document.getElementById('availability-note-content');
 
     function text(value, fallback) {
         if (value === null || value === undefined || String(value).trim() === '') {
@@ -729,18 +619,19 @@ unset($_SESSION['sams_app_flash'], $_SESSION['sams_app_error']);
         function renderSlot(day, row) {
             var startLabel = to12Hour(row.time_start || row.start_time);
             var endLabel = to12Hour(row.time_end || row.end_time);
-            var slotLabel = day + ' • ' + startLabel + ' to ' + endLabel;
             var noteValue = row.notes === null || row.notes === undefined
                 ? ''
                 : String(row.notes).trim();
-            var hasNote = noteValue !== '';
+            var slotType = noteValue !== '' || String(row.is_available) === '0'
+                ? 'Personal Reason'
+                : 'Duty Hours';
 
             return '<div class="slot-item">' +
+                '<span class="slot-item__type">' + escapeHtml(slotType) + '</span>' +
                 '<div class="slot-item__time">' + escapeHtml(startLabel) + ' to ' + escapeHtml(endLabel) + '</div>' +
-                '<span class="note-chip ' + (hasNote ? 'note-chip--yes' : 'note-chip--no') + '">' + (hasNote ? 'Has Note' : 'No Note') + '</span>' +
-                '<div class="slot-item__actions">' +
-                    '<button type="button" class="note-btn view-note-btn" data-slot="' + encodeURIComponent(slotLabel) + '" data-note="' + encodeURIComponent(noteValue) + '">View Note</button>' +
-                '</div>' +
+                (noteValue !== ''
+                    ? '<div class="slot-item__note"><strong>Note:</strong> ' + escapeHtml(noteValue) + '</div>'
+                    : '') +
             '</div>';
         }
 
@@ -775,11 +666,11 @@ unset($_SESSION['sams_app_flash'], $_SESSION['sams_app_error']);
 
             var morningHtml = morningSlots.length
                 ? morningSlots.map(function (row) { return renderSlot(day, row); }).join('')
-                : '<div class="slot-empty">No morning slot</div>';
+                : '<div class="slot-empty"><strong>Class Schedule</strong><br>Unavailable for duty during this period.</div>';
 
             var afternoonHtml = afternoonSlots.length
                 ? afternoonSlots.map(function (row) { return renderSlot(day, row); }).join('')
-                : '<div class="slot-empty">No afternoon slot</div>';
+                : '<div class="slot-empty"><strong>Class Schedule</strong><br>Unavailable for duty during this period.</div>';
 
             return '<article class="day-card">' +
                 '<div class="day-card__label">' + escapeHtml(day) + '</div>' +
@@ -798,56 +689,6 @@ unset($_SESSION['sams_app_flash'], $_SESSION['sams_app_error']);
 
         availabilityContainer.innerHTML = '<div class="availability-days">' + html + '</div>';
     }
-
-    function openNoteModal(slotLabel, noteText) {
-        if (!noteModal || !noteModalSlot || !noteModalContent) {
-            return;
-        }
-
-        noteModalSlot.textContent = slotLabel || 'Selected availability slot';
-        noteModalContent.textContent = noteText && noteText.trim() !== '' ? noteText : 'No reason provided.';
-        noteModal.classList.add('is-open');
-        noteModal.setAttribute('aria-hidden', 'false');
-    }
-
-    function closeNoteModal() {
-        if (!noteModal) {
-            return;
-        }
-        noteModal.classList.remove('is-open');
-        noteModal.setAttribute('aria-hidden', 'true');
-    }
-
-    if (availabilityContainer) {
-        availabilityContainer.addEventListener('click', function (event) {
-            var button = event.target.closest('.view-note-btn');
-            if (!button) {
-                return;
-            }
-
-            var slotLabel = decodeURIComponent(button.getAttribute('data-slot') || '');
-            var noteText = decodeURIComponent(button.getAttribute('data-note') || '');
-            openNoteModal(slotLabel, noteText);
-        });
-    }
-
-    if (noteModalClose) {
-        noteModalClose.addEventListener('click', closeNoteModal);
-    }
-
-    if (noteModal) {
-        noteModal.addEventListener('click', function (event) {
-            if (event.target === noteModal) {
-                closeNoteModal();
-            }
-        });
-    }
-
-    document.addEventListener('keydown', function (event) {
-        if (event.key === 'Escape') {
-            closeNoteModal();
-        }
-    });
 
     function renderError(message) {
         var errorHtml = '<div class="error">' + escapeHtml(message) + '</div>';

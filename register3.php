@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/config/bootstrap.php';
+require_once __DIR__ . '/config/mail.php';
 
 if (empty($_SESSION['sams_registration']['step1'])) {
     header('Location: register.php');
@@ -75,7 +76,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && empty($_GET['finalize'])) {
     foreach ($availabilityDays as $day) {
         foreach ($availabilityPeriods as $period) {
             $slot = $availabilityForm[$day][$period] ?? [];
-            if (empty($slot['enabled'])) {
+            $slotNote = substr(trim((string) ($slot['notes'] ?? '')), 0, 500);
+            if (empty($slot['enabled']) && $slotNote === '') {
                 continue;
             }
 
@@ -111,7 +113,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && empty($_GET['finalize'])) {
                 'day_of_week' => $day,
                 'time_start' => $timeStart,
                 'time_end' => $timeEnd,
-                'notes' => substr(trim((string) ($slot['notes'] ?? '')), 0, 500),
+                'notes' => $slotNote,
+                'is_available' => !empty($slot['enabled']),
             ];
         }
     }
@@ -382,11 +385,17 @@ if (isset($_GET['finalize'])) {
                 }
             }
 
+            $hasAvailabilityFlag = sams_column_exists($pdo, 'availability', 'is_available');
             $availabilityStatement = $pdo->prepare(
-                'INSERT INTO availability
-                    (application_id, term_id, day_of_week, start_time, end_time, notes)
-                 VALUES
-                    (:application_id, :term_id, :day_of_week, :start_time, :end_time, :notes)'
+                $hasAvailabilityFlag
+                    ? 'INSERT INTO availability
+                        (application_id, term_id, day_of_week, start_time, end_time, notes, is_available)
+                       VALUES
+                        (:application_id, :term_id, :day_of_week, :start_time, :end_time, :notes, :is_available)'
+                    : 'INSERT INTO availability
+                        (application_id, term_id, day_of_week, start_time, end_time, notes)
+                       VALUES
+                        (:application_id, :term_id, :day_of_week, :start_time, :end_time, :notes)'
             );
             $totalAvailabilityHours = 0.0;
             $dailyAvailabilityHours = [];
@@ -397,18 +406,25 @@ if (isset($_GET['finalize'])) {
                     throw new RuntimeException('An availability time slot is invalid. Please review your schedule.');
                 }
 
-                $hours = ($endTimestamp - $startTimestamp) / 3600;
                 $day = (string) ($entry['day_of_week'] ?? '');
-                $dailyAvailabilityHours[$day] = ($dailyAvailabilityHours[$day] ?? 0.0) + $hours;
-                $totalAvailabilityHours += $hours;
-                $availabilityStatement->execute([
+                $isAvailable = array_key_exists('is_available', $entry) ? (bool) $entry['is_available'] : true;
+                $hours = ($endTimestamp - $startTimestamp) / 3600;
+                if ($isAvailable) {
+                    $dailyAvailabilityHours[$day] = ($dailyAvailabilityHours[$day] ?? 0.0) + $hours;
+                    $totalAvailabilityHours += $hours;
+                }
+                $availabilityParams = [
                     'application_id' => $applicationId,
                     'term_id' => (int) $activeTermId,
                     'day_of_week' => (string) ($entry['day_of_week'] ?? ''),
                     'start_time' => (string) ($entry['time_start'] ?? ''),
                     'end_time' => (string) ($entry['time_end'] ?? ''),
                     'notes' => ($entry['notes'] ?? '') !== '' ? (string) $entry['notes'] : null,
-                ]);
+                ];
+                if ($hasAvailabilityFlag) {
+                    $availabilityParams['is_available'] = $isAvailable ? 1 : 0;
+                }
+                $availabilityStatement->execute($availabilityParams);
             }
 
             if (array_filter($dailyAvailabilityHours, static fn (float $hours): bool => $hours < 2.0) !== []) {
@@ -433,6 +449,18 @@ if (isset($_GET['finalize'])) {
 
             $pdo->commit();
 
+            try {
+                $termLabel = trim((string) ($currentTerm['term_name'] ?? '') . ' ' . (string) ($currentTerm['term_year'] ?? ''));
+                sams_send_application_submitted_email(
+                    $email,
+                    $fullName !== '' ? $fullName : $email,
+                    'APP-' . $applicationId,
+                    $termLabel !== '' ? $termLabel : 'Current Term'
+                );
+            } catch (Throwable $mailException) {
+                error_log('[sams] Registration submission mailer failed: ' . $mailException->getMessage());
+            }
+
             unset($_SESSION['sams_registration']);
             $_SESSION['registration_submission'] = [
                 'success' => true,
@@ -449,7 +477,7 @@ if (isset($_GET['finalize'])) {
                 'status' => 'PENDING',
             ];
 
-            header('Location: status.php');
+            header('Location: register2.php?submitted=1');
             exit;
         } catch (Throwable $exception) {
             if (isset($pdo) && $pdo->inTransaction()) {

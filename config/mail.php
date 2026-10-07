@@ -304,6 +304,44 @@ function sams_send_application_review_email(string $toEmail, string $toName, str
             error_log('[sams] Fallback mail failed: ' . $e2->getMessage());
             throw $e2;
         }
+
+        function sams_send_application_submitted_email(
+            string $toEmail,
+            string $toName,
+            string $applicationReference,
+            string $termLabel
+        ): void {
+            require_once __DIR__ . '/../vendor/autoload.php';
+
+            $config = sams_mail_config();
+            $safeName = htmlspecialchars($toName, ENT_QUOTES, 'UTF-8');
+            $safeReference = htmlspecialchars($applicationReference, ENT_QUOTES, 'UTF-8');
+            $safeTerm = htmlspecialchars($termLabel, ENT_QUOTES, 'UTF-8');
+            $message = 'Hello ' . $safeName . ',<br><br>'
+                . 'Your Student Assistant application has been submitted successfully and is now pending review.<br><br>'
+                . '<strong>Application reference:</strong> ' . $safeReference . '<br>'
+                . '<strong>Term:</strong> ' . $safeTerm . '<br><br>'
+                . 'You may log in to SAMS to view your application status.';
+
+            $mailer = new PHPMailer\PHPMailer\PHPMailer(true);
+            $mailer->CharSet = 'UTF-8';
+            $mailer->setFrom($config['from_email'], $config['from_name']);
+            $mailer->addAddress($toEmail, $toName);
+            sams_configure_mailer($mailer, $config);
+            $mailer->isHTML(true);
+            $mailer->Subject = 'Your SAMS application was submitted';
+            $mailer->Body = sams_build_branded_email(
+                'SAMS Application Received',
+                'Application Submitted',
+                $message,
+                '#003087',
+                'Log in to SAMS',
+                'http://localhost/samss-main/login.php',
+                true
+            );
+            $mailer->AltBody = "Hello {$toName},\n\nYour Student Assistant application was submitted successfully.\nApplication reference: {$applicationReference}\nTerm: {$termLabel}\n\nLog in to SAMS to view your application status.";
+            $mailer->send();
+        }
     }
 }
 

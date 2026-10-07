@@ -6,7 +6,46 @@ require_once __DIR__ . '/config/bootstrap.php';
 $submission = $_SESSION['registration_submission'] ?? [];
 $applicationId = (int) ($submission['application_id'] ?? 0);
 
-// Fallback demo values so the page still renders if opened directly.
+if ($applicationId <= 0) {
+    $currentUser = sams_authenticated_user();
+    if ($currentUser && ($currentUser['role'] ?? '') === 'student') {
+        $statusStatement = sams_pdo()->prepare(
+            'SELECT
+                a.application_id,
+                a.status,
+                COALESCE(a.submitted_at, a.created_at) AS date_submitted,
+                s.student_id_number AS student_number,
+                s.program AS course,
+                s.year_level,
+                u.first_name,
+                u.last_name
+             FROM applications a
+             INNER JOIN students s ON s.student_id = a.student_id
+             INNER JOIN users u ON u.user_id = s.user_id
+             WHERE s.user_id = :user_id
+             ORDER BY a.application_id DESC
+             LIMIT 1'
+        );
+        $statusStatement->execute([
+            'user_id' => (int) ($currentUser['user_id'] ?? 0),
+        ]);
+        $application = $statusStatement->fetch(PDO::FETCH_ASSOC);
+
+        if ($application) {
+            $applicationId = (int) $application['application_id'];
+            $submission = [
+                'application_id' => $applicationId,
+                'student_name' => trim((string) $application['first_name'] . ' ' . (string) $application['last_name']),
+                'student_number' => (string) $application['student_number'],
+                'course' => (string) $application['course'],
+                'year_level' => (string) $application['year_level'],
+                'date_submitted' => (string) $application['date_submitted'],
+                'status' => (string) $application['status'],
+            ];
+        }
+    }
+}
+
 $student_name   = (string) ($submission['student_name'] ?? 'Juan Dela Cruz');
 $student_id     = (string) ($submission['student_number'] ?? '2021-12345');
 $course         = (string) ($submission['course'] ?? 'BSIT');
@@ -764,7 +803,7 @@ if ($status === 'DRAFT') {
         </section>
 
         <!-- ── BACK LINK ── -->
-        <a href="index.php" class="back-link" aria-label="Back to Home">← Back to Home</a>
+        <a href="logout.php" class="back-link" aria-label="Back to Home">← Back to Home</a>
 
     </div>
 </main>

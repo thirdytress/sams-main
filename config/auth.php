@@ -95,6 +95,7 @@ function sams_login(array $user): void
         'student_id' => $user['student_id'] ?? null,
         'office_name' => $user['office_name'] ?? null,
         'must_change_password' => (int) ($user['must_change_password'] ?? 0),
+        'application_status' => $user['application_status'] ?? null,
     ];
 
     if ($user['role'] === 'admin') {
@@ -145,7 +146,14 @@ function sams_authenticate(string $identifier, string $password): array
                 {$mustChangePasswordSelect},
                 COALESCE(sp.office_name, '') AS office_name,
                 s.student_id,
-                s.student_id_number
+                s.student_id_number,
+                (
+                    SELECT a.status
+                    FROM applications a
+                    WHERE a.student_id = s.student_id
+                    ORDER BY a.application_id DESC
+                    LIMIT 1
+                ) AS application_status
             FROM users u
             LEFT JOIN students s ON u.{$userIdColumn} = s.user_id
             LEFT JOIN supervisors sp ON u.{$userIdColumn} = sp.user_id
@@ -165,7 +173,8 @@ function sams_authenticate(string $identifier, string $password): array
         throw new RuntimeException('Invalid password.');
     }
 
-    if (!$user['is_active']) {
+    $applicationStatus = strtolower(trim((string) ($user['application_status'] ?? '')));
+    if (!$user['is_active'] && !($user['role'] === 'student' && in_array($applicationStatus, ['pending', 'rejected'], true))) {
         throw new RuntimeException('Your account is not active. Please contact support.');
     }
 
@@ -177,6 +186,7 @@ function sams_authenticate(string $identifier, string $password): array
         'last_name' => $user['last_name'],
         'student_id' => $user['student_id'] ?? null,
         'student_id_number' => $user['student_id_number'] ?? null,
+        'application_status' => $user['application_status'] ?? null,
         'office_name' => $user['office_name'] ?? null,
         'must_change_password' => (int) ($user['must_change_password'] ?? 0),
     ];
@@ -191,5 +201,3 @@ function sams_dashboard_for_role(string $role): string
         default => 'index.php',
     };
 }
-
-

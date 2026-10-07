@@ -63,8 +63,7 @@ function sams_current_term(PDO $pdo): array
     $termStatement = $pdo->query(
         'SELECT term_id, term_name, term_year
          FROM terms
-         WHERE start_date <= CURDATE()
-           AND end_date >= CURDATE()
+         WHERE is_active = 1
          ORDER BY term_id DESC
          LIMIT 1'
     );
@@ -76,7 +75,8 @@ function sams_current_term(PDO $pdo): array
     $termStatement = $pdo->query(
         'SELECT term_id, term_name, term_year
          FROM terms
-         WHERE is_active = 1
+         WHERE start_date <= CURDATE()
+           AND end_date >= CURDATE()
          ORDER BY term_id DESC
          LIMIT 1'
     );

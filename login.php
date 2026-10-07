@@ -33,6 +33,7 @@ function sams_send_student_otp_from_user(array $user): void
       'last_name' => (string) ($user['last_name'] ?? ''),
       'student_id' => (string) ($user['student_id'] ?? ''),
       'must_change_password' => (int) ($user['must_change_password'] ?? 0),
+      'application_status' => (string) ($user['application_status'] ?? ''),
     ],
     'otp_hash' => password_hash($otpCode, PASSWORD_DEFAULT),
     'expires_at' => time() + 600,
@@ -53,6 +54,11 @@ function sams_finish_student_login(array $pendingUser): void
 
   if ((int) ($pendingUser['must_change_password'] ?? 0) === 1) {
     header('Location: change_password.php');
+    exit;
+  }
+
+  if (in_array(strtolower((string) ($pendingUser['application_status'] ?? '')), ['pending', 'rejected'], true)) {
+    header('Location: status.php');
     exit;
   }
 
