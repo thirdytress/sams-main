@@ -1411,6 +1411,19 @@ function sams_html(string $value): string
   var scanBuffer = '';
   var isScanningMode = false;
   var currentScanStudentId = null;
+  var scanFinalizeTimer = null;
+
+  function finalizeNfcScan() {
+    if (scanFinalizeTimer) {
+      window.clearTimeout(scanFinalizeTimer);
+      scanFinalizeTimer = null;
+    }
+
+    var uid = scanBuffer.trim();
+    if (uid !== '') {
+      saveModalNfcUid(uid);
+    }
+  }
 
   document.addEventListener('keydown', function (e) {
     if (!isScanningMode) return;
@@ -1426,10 +1439,14 @@ function sams_html(string $value): string
 
     if (e.key === 'Enter') {
       e.preventDefault();
-      var uid = scanBuffer.trim();
-      if (uid !== '') {
-        saveModalNfcUid(uid);
-      }
+      finalizeNfcScan();
+      return;
+    }
+
+    // Some readers finish with Tab instead of Enter.
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      finalizeNfcScan();
       return;
     }
 
@@ -1437,17 +1454,28 @@ function sams_html(string $value): string
       return;
     }
 
-    if (/^[a-zA-Z0-9]$/.test(e.key)) {
+    // NFC/RFID readers may include separators such as :, -, or spaces.
+    if (/^[a-zA-Z0-9:_\-. ]$/.test(e.key)) {
       e.preventDefault();
       scanBuffer += e.key;
       var displayVal = document.getElementById('modal-nfc-uid');
       if (displayVal) {
         displayVal.textContent = 'Scanning... ' + scanBuffer;
       }
+
+      // Finalize readers that do not send Enter or Tab after the UID.
+      if (scanFinalizeTimer) {
+        window.clearTimeout(scanFinalizeTimer);
+      }
+      scanFinalizeTimer = window.setTimeout(finalizeNfcScan, 500);
     }
   });
 
   window.startNfcScan = function (studentId) {
+    if (scanFinalizeTimer) {
+      window.clearTimeout(scanFinalizeTimer);
+      scanFinalizeTimer = null;
+    }
     isScanningMode = true;
     scanBuffer = '';
     currentScanStudentId = studentId;
@@ -1504,12 +1532,16 @@ function sams_html(string $value): string
   }
 
   function resetModalNfcInput() {
+    if (scanFinalizeTimer) {
+      window.clearTimeout(scanFinalizeTimer);
+      scanFinalizeTimer = null;
+    }
     isScanningMode = false;
     scanBuffer = '';
     var displayVal = document.getElementById('modal-nfc-uid');
     if (displayVal) {
-      displayVal.textContent = 'Error resetting...';
-      displayVal.style.color = 'var(--color-dark)';
+      displayVal.textContent = 'No card registered';
+      displayVal.style.color = '';
     }
     var scanBtn = document.getElementById('btn-modal-nfc-scan');
     if (scanBtn) {
