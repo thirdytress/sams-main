@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../config/bootstrap.php';
 require_once __DIR__ . '/../config/reshuffle.php';
+require_once __DIR__ . '/../config/audit.php';
 
 $user = sams_authenticated_user();
 if (!$user || ($user['role'] ?? null) !== 'supervisor') {
@@ -82,6 +83,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'confi
         if ($evalId > 0) {
             $upd = $pdo->prepare('UPDATE evaluations SET retention_decision = "retain" WHERE evaluation_id = :id');
             $upd->execute(['id' => $evalId]);
+
+            sams_log_audit(
+                $pdo,
+                'UPDATE',
+                'Evaluations',
+                "Supervisor confirmed retention of {$studentName} in {$officeName}.",
+                ['evaluation_id' => $evalId, 'decision' => 'retain', 'office' => $officeName],
+                $evalId,
+                'evaluation'
+            );
+
             $flashMessage = 'Retention confirmed: ' . $studentName . ' will remain assigned to ' . $officeName . ' for the next period.';
         }
     } catch (Throwable $exception) {
@@ -164,6 +176,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'submi
                 $studentFullName = trim((string) ($appRow['first_name'] ?? '') . ' ' . (string) ($appRow['last_name'] ?? ''));
                 $studentId = (int) ($appRow['student_id'] ?? 0);
                 $reshuffleCount = sams_student_reshuffle_count($pdo, $studentId);
+
+                sams_log_audit(
+                    $pdo,
+                    'EVALUATE',
+                    'Evaluations',
+                    "Supervisor submitted performance evaluation for {$studentFullName} ({$avgScore}/5.0).",
+                    [
+                        'student_id' => $studentId,
+                        'performance' => $performanceRating,
+                        'reliability' => $reliabilityRating,
+                        'professionalism' => $professionalismRating,
+                        'comments' => $comments,
+                        'office' => $officeName,
+                    ],
+                    $newEvalId,
+                    'evaluation'
+                );
 
                 $flashMessage = 'Evaluation submitted successfully for ' . $studentFullName . ' (' . $avgScore . '/5).';
 

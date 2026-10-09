@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../config/bootstrap.php';
+require_once __DIR__ . '/../config/audit.php';
 
 $currentUser = sams_authenticated_user();
 if (!$currentUser || (($currentUser['role'] ?? null) !== 'admin')) {
@@ -45,6 +46,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'updat
                 'term_id' => $activeTermId,
             ]);
             $pdo->commit();
+
+            sams_log_audit(
+                $pdo,
+                'UPDATE',
+                'System Settings',
+                "Admin updated active registration academic term to {$selectedTermName}.",
+                ['active_term' => $selectedTermName, 'term_id' => $activeTermId],
+                $activeTermId,
+                'term'
+            );
+
             $termSettingsMessage = $selectedTermName . ' is now the active registration term.';
         } catch (Throwable $exception) {
             if ($pdo->inTransaction()) {

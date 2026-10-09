@@ -24,6 +24,7 @@ if (!function_exists('sams_admin_sidebar_icon')) {
             'students' => '<svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="10" cy="6.5" r="3" stroke="' . $stroke . '" stroke-width="1.5"/><path d="M3.5 17c0-3.5 2.9-6 6.5-6s6.5 2.5 6.5 6" stroke="' . $stroke . '" stroke-width="1.5" stroke-linecap="round"/></svg>',
             'profile' => '<svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="10" cy="6.5" r="3" stroke="' . $stroke . '" stroke-width="1.5"/><path d="M3.5 17c0-3.5 2.9-6 6.5-6s6.5 2.5 6.5 6" stroke="' . $stroke . '" stroke-width="1.5" stroke-linecap="round"/></svg>',
             'shuffle_requests' => '<svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 5h2.5c1.4 0 2.2.7 3 2l3 6c.8 1.3 1.6 2 3 2H17M14 3l3 2-3 2M14 13l3 2-3 2" stroke="' . $stroke . '" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 15h2.5c.8 0 1.5-.3 2.1-1" stroke="' . $stroke . '" stroke-width="1.5" stroke-linecap="round"/></svg>',
+            'audit_logs' => '<svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 3h12a2 2 0 012 2v10a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2z" stroke="' . $stroke . '" stroke-width="1.5"/><path d="M7 7h6M7 10h6M7 13h3" stroke="' . $stroke . '" stroke-width="1.5" stroke-linecap="round"/><circle cx="14" cy="13" r="2" stroke="' . $stroke . '" stroke-width="1.2"/><path d="M15.5 14.5l2 2" stroke="' . $stroke . '" stroke-width="1.2" stroke-linecap="round"/></svg>',
             'settings' => '<svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M8.325 2.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37a1.724 1.724 0 002.572-1.065z" stroke="' . $stroke . '" stroke-width="1.3"/><circle cx="10" cy="10" r="3" stroke="' . $stroke . '" stroke-width="1.3"/></svg>',
             'logout' => '<svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M7 3H4a1 1 0 00-1 1v12a1 1 0 001 1h3" stroke="' . $stroke . '" stroke-width="1.5" stroke-linecap="round"/><path d="M13 14l3-4-3-4M16 10H7" stroke="' . $stroke . '" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
             default => '',
@@ -46,6 +47,7 @@ $mainNavItems = [
     ['key' => 'meetings', 'href' => 'meetings.php', 'label' => 'Meetings'],
     ['key' => 'students', 'href' => 'students.php', 'label' => 'Students'],
     ['key' => 'shuffle_requests', 'href' => 'shuffle_requests.php', 'label' => 'Shuffle Requests'],
+    ['key' => 'audit_logs', 'href' => 'audit_logs.php', 'label' => 'Audit Logs'],
 ];
 
 $footerNavItems = [

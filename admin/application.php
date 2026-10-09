@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../config/bootstrap.php';
 require_once __DIR__ . '/../config/mail.php';
+require_once __DIR__ . '/../config/audit.php';
 
 $currentUser = sams_authenticated_user();
 if (!$currentUser || ($currentUser['role'] ?? null) !== 'admin') {
@@ -145,6 +146,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       } catch (Throwable $mailException) {
         $flashError = 'Application was updated, but the email notification could not be sent: ' . $mailException->getMessage();
       }
+
+      // Log to Audit Trail
+      $applicantFullName = trim((string) ($application['first_name'] ?? '') . ' ' . (string) ($application['last_name'] ?? ''));
+      $auditAction = $reviewAction === 'approve' ? 'APPLICATION_APPROVE' : 'APPLICATION_REJECT';
+      sams_log_audit(
+          $auditAction,
+          'APPLICATION',
+          "Admin {$admin_name} " . ($reviewAction === 'approve' ? 'approved' : 'rejected') . " application #{$applicationId} for student {$applicantFullName}.",
+          'application',
+          $applicationId,
+          [
+              'application_id' => $applicationId,
+              'applicant_name' => $applicantFullName,
+              'new_status'     => $newStatus,
+              'office'         => $application['preferred_office'] ?? 'Unassigned',
+          ],
+          $currentUser
+      );
 
       $flashMessage = $reviewAction === 'approve'
         ? 'Application approved successfully.'

@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../config/bootstrap.php';
 require_once __DIR__ . '/../config/reshuffle.php';
+require_once __DIR__ . '/../config/audit.php';
 
 $user = sams_authenticated_user();
 if (!$user || ($user['role'] ?? null) !== 'supervisor') {
@@ -117,11 +118,24 @@ try {
         'reason' => $reason,
     ]);
 
-    // 6. Update evaluation retention decision to 'reshuffle'
-    if ($evalId > 0) {
-        $pdo->prepare('UPDATE evaluations SET retention_decision = "reshuffle" WHERE evaluation_id = :id')
-            ->execute(['id' => $evalId]);
-    }
+    $shuffleReqId = (int) $pdo->lastInsertId();
+
+    sams_log_audit(
+        $pdo,
+        'RESHUFFLE_REQUEST',
+        'Reshuffle',
+        "Supervisor submitted Reshuffle Request for {$studentName} in {$supervisor['office_name']} (Transfer #" . ($currentShuffles + 1) . " of 3).",
+        [
+            'from_student_id' => $fromStudentId,
+            'to_student_id' => $toStudentId,
+            'reason' => $reason,
+            'evaluation_id' => $evalId,
+            'reshuffle_number' => $currentShuffles + 1,
+            'office' => $supervisor['office_name'],
+        ],
+        $shuffleReqId,
+        'shuffle_request'
+    );
 
     $nextShuffleNumber = $currentShuffles + 1;
     $_SESSION['supervisor_shuffle_flash'] = 'Reshuffle request submitted for ' . $studentName . ' (Reshuffle #' . $nextShuffleNumber . ' of 3). Sent to Admin for review.';

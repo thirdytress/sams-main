@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../config/bootstrap.php';
 require_once __DIR__ . '/../config/mail.php';
+require_once __DIR__ . '/../config/audit.php';
 
 $currentUser = sams_authenticated_user();
 if (!$currentUser || (($currentUser['role'] ?? null) !== 'admin')) {
@@ -96,6 +97,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $postAction === 'create') {
                 ]);
 
                 $pdo->commit();
+
+                // Log to Audit Trail
+                $adminName = (string) ($currentUser['name'] ?? 'Admin');
+                $supFullName = trim($firstName . ' ' . $lastName);
+                sams_log_audit(
+                    'SUPERVISOR_CREATE',
+                    'SUPERVISOR',
+                    "Admin {$adminName} created supervisor account for {$supFullName} ({$officeName}, {$email}).",
+                    'user',
+                    $newUserId,
+                    [
+                        'user_id'     => $newUserId,
+                        'name'        => $supFullName,
+                        'email'       => $email,
+                        'office_name' => $officeName,
+                        'max_students'=> $maxStudents,
+                    ],
+                    $currentUser
+                );
 
                 $mailStatus = 'sent';
                 try {

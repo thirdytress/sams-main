@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../config/bootstrap.php';
 require_once __DIR__ . '/../config/reshuffle.php';
+require_once __DIR__ . '/../config/audit.php';
 
 $admin = sams_authenticated_user();
 if (!$admin || ($admin['role'] ?? null) !== 'admin') {
@@ -52,6 +53,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($decision === 'reject') {
             $update = $pdo->prepare('UPDATE shuffle_requests SET status = "rejected", reviewed_by = :admin_id, reviewed_at = NOW(), review_notes = :notes WHERE request_id = :request_id');
             $update->execute(['admin_id' => $adminId ?: null, 'notes' => $reviewNotes, 'request_id' => $requestId]);
+
+            sams_log_audit(
+                $pdo,
+                'REJECT',
+                'Reshuffle',
+                "Admin rejected Reshuffle Request #{$requestId} for {$request['from_name']} in {$request['office_name']}.",
+                ['request_id' => $requestId, 'review_notes' => $reviewNotes],
+                $requestId,
+                'shuffle_request'
+            );
+
             $message = 'Shuffle request rejected.';
         } else {
             $fromStudentId = (int) $request['from_student_id'];
@@ -119,6 +131,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $update = $pdo->prepare('UPDATE shuffle_requests SET status = "approved", reviewed_by = :admin_id, reviewed_at = NOW(), review_notes = :notes WHERE request_id = :request_id');
             $update->execute(['admin_id' => $adminId ?: null, 'notes' => $reviewNotes, 'request_id' => $requestId]);
+
+            sams_log_audit(
+                $pdo,
+                'RESHUFFLE_APPROVE',
+                'Reshuffle',
+                "Admin approved Reshuffle Request #{$requestId} for {$request['from_name']} (Transfer #{$newCount} of 3).",
+                [
+                    'request_id' => $requestId,
+                    'from_student' => $request['from_name'],
+                    'new_reshuffle_count' => $newCount,
+                    'review_notes' => $reviewNotes,
+                ],
+                $requestId,
+                'shuffle_request'
+            );
 
             if ($newCount >= 3) {
                 $message = 'Shuffle approved and schedules transferred. ⚠️ Notice: Student ' . $request['from_name'] . ' has now reached the maximum limit of 3 office transfers.';

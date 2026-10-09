@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../config/bootstrap.php';
 require_once __DIR__ . '/../config/duty_excuses.php';
+require_once __DIR__ . '/../config/audit.php';
 
 $user = sams_authenticated_user();
 if (!$user || ($user['role'] ?? null) !== 'admin') {
@@ -44,6 +45,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $upd = $pdo->prepare('UPDATE duty_excuses SET admin_notes = :notes WHERE excuse_id = :id');
             $upd->execute(['notes' => $adminNotes, 'id' => $excuseId]);
             $updateMessage = 'Admin note updated successfully.';
+
+            sams_log_audit(
+                'DUTY_EXCUSE_NOTE',
+                'DUTY_EXCUSE',
+                "Admin {$adminName} updated note on Duty Excuse #{$excuseId}.",
+                'duty_excuse',
+                $excuseId,
+                ['notes' => $adminNotes],
+                $user
+            );
         }
     } catch (Throwable $e) {
         // error

@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/config/bootstrap.php';
 require_once __DIR__ . '/config/mail.php';
+require_once __DIR__ . '/config/audit.php';
 
 $currentUser = sams_authenticated_user();
 if ($currentUser) {
@@ -51,6 +52,24 @@ function sams_finish_student_login(array $pendingUser): void
 {
   unset($_SESSION['sams_pending_student_login']);
   sams_login($pendingUser);
+
+  try {
+    $pdo = sams_pdo();
+    $name = trim((string) ($pendingUser['name'] ?? $pendingUser['first_name'] ?? 'Student'));
+    sams_log_audit(
+      $pdo,
+      'LOGIN',
+      'Authentication',
+      "Student {$name} logged in via 2FA OTP verification.",
+      ['role' => 'student', 'identifier' => $pendingUser['email'] ?? ''],
+      (int) ($pendingUser['user_id'] ?? $pendingUser['id'] ?? 0),
+      'user',
+      (int) ($pendingUser['user_id'] ?? $pendingUser['id'] ?? 0),
+      'student',
+      $name,
+      (string) ($pendingUser['email'] ?? '')
+    );
+  } catch (Throwable $e) {}
 
   if ((int) ($pendingUser['must_change_password'] ?? 0) === 1) {
     header('Location: change_password.php');
@@ -126,6 +145,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           $showOtpModal = true;
         } else {
           sams_login($user);
+
+          try {
+            $pdo = sams_pdo();
+            $uRole = (string) ($user['role'] ?? 'staff');
+            $uName = trim((string) ($user['name'] ?? $user['first_name'] ?? ucfirst($uRole)));
+            sams_log_audit(
+              $pdo,
+              'LOGIN',
+              'Authentication',
+              ucfirst($uRole) . " {$uName} logged in successfully.",
+              ['role' => $uRole, 'identifier' => $identifier],
+              (int) ($user['user_id'] ?? $user['id'] ?? 0),
+              'user',
+              (int) ($user['user_id'] ?? $user['id'] ?? 0),
+              $uRole,
+              $uName,
+              (string) ($user['email'] ?? '')
+            );
+          } catch (Throwable $e) {}
 
           if ((int) ($user['must_change_password'] ?? 0) === 1) {
             header('Location: change_password.php');

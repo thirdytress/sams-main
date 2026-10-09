@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../config/bootstrap.php';
 require_once __DIR__ . '/../config/duty_excuses.php';
+require_once __DIR__ . '/../config/audit.php';
 
 $user = sams_authenticated_user();
 if (!$user || ($user['role'] ?? null) !== 'student') {
@@ -178,6 +179,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $dayOfWeek,
             $excuseType,
             $reason
+        );
+
+        $excuseId = (int) $pdo->lastInsertId();
+
+        sams_log_audit(
+            $pdo,
+            'DUTY_EXCUSE',
+            'Duty Excuses',
+            "Student {$studentName} filed a Duty Excuse for {$dutyDate} ({$excuseType}).",
+            [
+                'duty_date' => $dutyDate,
+                'day_of_week' => $dayOfWeek,
+                'excuse_type' => $excuseType,
+                'reason' => $reason,
+                'proof_file' => $originalName,
+                'office_name' => $officeName,
+            ],
+            $excuseId,
+            'duty_excuse'
         );
 
         $message = 'Your Duty Excuse for ' . date('F j, Y (l)', strtotime($dutyDate)) . ' has been recorded as Excused and notified to your Supervisor and Admin.';
