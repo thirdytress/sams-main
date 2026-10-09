@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../config/bootstrap.php';
+require_once __DIR__ . '/../config/reshuffle.php';
 
 $user = sams_authenticated_user();
 if (!$user || (($user['role'] ?? null) !== 'supervisor')) {
@@ -10,8 +11,11 @@ if (!$user || (($user['role'] ?? null) !== 'supervisor')) {
 }
 
 $pdo = sams_pdo();
+sams_reshuffle_ensure_schema($pdo);
+
 $shuffleFlash = (string) ($_SESSION['supervisor_shuffle_flash'] ?? '');
-unset($_SESSION['supervisor_shuffle_flash']);
+$shuffleFlashError = (string) ($_SESSION['supervisor_shuffle_flash_error'] ?? '');
+unset($_SESSION['supervisor_shuffle_flash'], $_SESSION['supervisor_shuffle_flash_error']);
 
 $supervisorStatement = $pdo->prepare(
     'SELECT s.office_name
@@ -38,10 +42,10 @@ $replacementStmt = $pdo->prepare(
      FROM applications a
      INNER JOIN students s ON s.student_id = a.student_id
      INNER JOIN users u ON u.user_id = s.user_id
-     WHERE a.term_id = :term_id AND a.status = "approved" AND a.preferred_office = :office
+     WHERE a.term_id = :term_id AND a.status IN ("approved", "deployed")
      ORDER BY u.last_name, u.first_name'
 );
-$replacementStmt->execute(['term_id' => $activeTermId, 'office' => $supervisorOffice]);
+$replacementStmt->execute(['term_id' => $activeTermId]);
 $replacementStudents = $replacementStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
 $where = [
@@ -53,16 +57,18 @@ $params = [
     'office_app' => $supervisorOffice,
 ];
 
-$termFilterForSchedules = '';
 $termFilterForLogs = '';
-$termFilterForEval = '';
+$termFilterForEval1 = '';
+$termFilterForEval2 = '';
 if ($activeTermId > 0) {
     $where[] = 'ds.term_id = :term_id_ds';
     $params['term_id_ds'] = $activeTermId;
     $termFilterForLogs = ' AND l.term_id = :term_id_logs';
-    $termFilterForEval = ' AND e.term_id = :term_id_eval';
+    $termFilterForEval1 = ' AND e1.term_id = :term_id_eval1';
+    $termFilterForEval2 = ' AND e2.term_id = :term_id_eval2';
     $params['term_id_logs'] = $activeTermId;
-    $params['term_id_eval'] = $activeTermId;
+    $params['term_id_eval1'] = $activeTermId;
+    $params['term_id_eval2'] = $activeTermId;
 }
 
 if ($search !== '') {
@@ -81,6 +87,7 @@ $sql =
         s.student_id_number,
         s.program,
         s.year_level,
+        COALESCE(s.reshuffle_count, 0) AS reshuffle_count,
         COALESCE(u.first_name, "") AS first_name,
         COALESCE(u.last_name, "") AS last_name,
         COALESCE(NULLIF(TRIM(a.preferred_office), ""), NULLIF(TRIM(ds.office_name), ""), "Unassigned") AS office_name,
@@ -93,38 +100,48 @@ $sql =
               AND l.clock_out_time IS NOT NULL' . $termFilterForLogs . '
         ), 0) AS rendered_hours,
         COALESCE((
-            SELECT AVG((e.performance_rating + e.reliability_rating + e.professionalism_rating) / 3)
-            FROM evaluations e
-            WHERE e.application_id = a.application_id' . $termFilterForEval . '
-        ), 0) AS avg_rating
+            SELECT AVG((e1.performance_rating + e1.reliability_rating + e1.professionalism_rating) / 3)
+            FROM evaluations e1
+            WHERE e1.application_id = a.application_id' . $termFilterForEval1 . '
+        ), 0) AS avg_rating,
+        (
+            SELECT COUNT(*) FROM evaluations e2
+            WHERE e2.application_id = a.application_id' . $termFilterForEval2 . '
+        ) AS has_evaluation,
+        (
+            SELECT sr.status FROM shuffle_requests sr
+            WHERE sr.from_student_id = s.student_id AND sr.term_id = :term_id_sr
+            ORDER BY sr.created_at DESC LIMIT 1
+        ) AS shuffle_request_status
      FROM duty_schedules ds
      INNER JOIN applications a ON a.application_id = ds.application_id
      INNER JOIN students s ON s.student_id = a.student_id
      INNER JOIN users u ON u.user_id = s.user_id
      WHERE ' . implode(' AND ', $where) . '
-     GROUP BY a.application_id, s.student_id, s.student_id_number, s.program, s.year_level, u.first_name, u.last_name, office_name
+     GROUP BY a.application_id, s.student_id, s.student_id_number, s.program, s.year_level, s.reshuffle_count, u.first_name, u.last_name, office_name
      ORDER BY u.last_name ASC, u.first_name ASC';
+
+if ($activeTermId > 0) {
+    $params['term_id_sr'] = $activeTermId;
+} else {
+    $params['term_id_sr'] = 0;
+}
 
 $stmt = $pdo->prepare($sql);
 $stmt->execute($params);
 $students = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
 $totalStudents = count($students);
-$activeStudents = $totalStudents;
-$departments = [];
 $ratingSum = 0.0;
 $ratingCount = 0;
 foreach ($students as $studentRow) {
-    $departments[(string) ($studentRow['office_name'] ?? 'Unassigned')] = true;
     $rating = (float) ($studentRow['avg_rating'] ?? 0.0);
     if ($rating > 0) {
         $ratingSum += $rating;
         $ratingCount++;
     }
 }
-$departmentCount = count($departments);
 $avgRating = $ratingCount > 0 ? $ratingSum / $ratingCount : 0.0;
-$resultCount = count($students);
 
 function h(?string $value): string
 {
@@ -136,219 +153,301 @@ function h(?string $value): string
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Students | Supervisor Portal</title>
+    <title>Assigned Students | Supervisor Portal</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;900&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="../assets/css/sams-shell.css" />
-    <link rel="stylesheet" href="../assets/css/sams-theme-admin.css" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="../assets/css/supervisor-notifications.css" />
     <link rel="stylesheet" href="../assets/css/notifications-shell.css?v=20260922" />
     <style>
-        *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-        body{font-family:Inter,Arial,Helvetica,sans-serif;background:var(--color-bg-app);color:var(--color-heading);min-height:100vh;display:flex}
-        a{text-decoration:none;color:inherit}
-        .shell{display:flex;width:100%;min-height:100vh}
-        .sidebar{width:var(--sidebar-width);min-height:100vh;background:var(--color-white);border-right:1px solid var(--color-border);display:flex;flex-direction:column;position:sticky;top:0;height:100vh;overflow-y:auto}
-        .sidebar__brand{display:flex;align-items:center;gap:12px;padding:24px 24px 20px;border-bottom:1px solid var(--color-border)}
-        .sidebar__logo{width:40px;height:40px;background:var(--gradient-brand);border-radius:var(--radius-icon);display:flex;align-items:center;justify-content:center;flex-shrink:0}
-        .sidebar__logo-text{font-size:18px;font-weight:700;color:var(--color-white)}
-        .sidebar__brand-name{font-size:var(--font-base);font-weight:700;color:var(--color-heading)}
-        .sidebar__brand-sub{font-size:var(--font-xs);color:var(--color-body)}
-        .sidebar__nav{flex:1;padding:16px;display:flex;flex-direction:column;gap:4px;overflow-y:auto}
-        .sidebar__nav-link{display:flex;align-items:center;gap:12px;height:48px;padding:0 16px;border-radius:var(--radius-nav);font-size:var(--font-base);color:var(--color-label);transition:background .15s;white-space:nowrap}
-        .sidebar__nav-link:hover{background:var(--color-bg-app)}
-        .sidebar__nav-link--active{background:var(--color-primary);color:#fff}
-        .sidebar__nav-link--active:hover{opacity:.92}
-        .sidebar__nav-icon{width:20px;height:20px;flex-shrink:0}
-        .sidebar__footer{border-top:1px solid var(--color-border);padding:16px;display:flex;flex-direction:column;gap:4px;flex-shrink:0}
-        .main{flex:1;min-width:0;display:flex;flex-direction:column}
-        .topbar{background:var(--color-white);border-bottom:1px solid var(--color-border);height:var(--topbar-height);padding:0 32px;display:flex;align-items:center;justify-content:space-between}
-        .topbar__title{font-size:var(--font-lg);font-weight:700;color:var(--color-heading)}
-        .topbar__sub{font-size:var(--font-sm);color:var(--color-body)}
-        .page{flex:1;padding:36px;display:flex;flex-direction:column;gap:18px}
-        .stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
-        .stat{position:relative;background:#fff;border:1px solid var(--color-border);border-radius:14px;padding:16px;box-shadow:0 1px 2px rgba(16,24,40,.04)}
-        .stat::before{content:'';position:absolute;left:0;top:0;width:100%;height:3px;border-radius:14px 14px 0 0;background:linear-gradient(90deg,#155dfc,#9810fa)}
-        .stat__label{font-size:13px;color:var(--color-muted)}
-        .stat__value{margin-top:6px;font-size:34px;font-weight:800;line-height:1;color:var(--color-heading)}
-        .card{background:#fff;border:1px solid var(--color-border);border-radius:14px;overflow:hidden}
-        .card__head{padding:16px;border-bottom:1px solid var(--color-border);background:linear-gradient(180deg,#fbfcff 0%,#ffffff 100%)}
-        .card__title{font-size:18px;font-weight:700;color:var(--color-heading)}
-        .card__meta{margin-top:4px;font-size:13px;color:var(--color-body)}
-        .toolbar{display:flex;align-items:center;gap:12px;justify-content:space-between;padding:16px;border-bottom:1px solid var(--color-border);background:#fcfcfd}
-        .search{width:100%;max-width:320px;height:40px;border:1px solid var(--color-border);border-radius:10px;padding:0 12px;font-size:14px;transition:border-color .18s ease, box-shadow .18s ease}
-        .search:focus{outline:none;border-color:#9fc0ff;box-shadow:0 0 0 3px rgba(21,93,252,.12)}
-        table{width:100%;border-collapse:collapse}
-        thead th{padding:12px 16px;border-bottom:1px solid var(--color-border);font-size:13px;color:var(--color-heading);text-align:left;background:#f9fafb}
-        tbody td{padding:12px 16px;border-bottom:1px solid var(--color-border);font-size:14px;color:var(--color-heading);vertical-align:middle}
-        tbody tr:hover td{background:#f8faff}
-        tbody tr:last-child td{border-bottom:none}
-        .pill{display:inline-flex;align-items:center;height:24px;padding:0 10px;border-radius:9999px;background:#e8f0ff;color:#155dfc;font-size:12px;font-weight:700}
-        .pill--active{background:#ecfdf3;color:#027a48}
-        .btn{display:inline-flex;align-items:center;justify-content:center;height:36px;padding:0 12px;border-radius:10px;background:var(--gradient-brand);color:#fff;font-weight:700;font-size:13px;box-shadow:0 8px 16px rgba(21,93,252,.2)}
-        .btn:hover{opacity:.95;transform:translateY(-1px)}
-        .muted{color:var(--color-muted)}
-        .empty{padding:24px;text-align:center;color:var(--color-muted)}
-        @media (max-width:960px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.page{padding:20px}}
-        @media (max-width:680px){.stats{grid-template-columns:1fr}.toolbar{flex-direction:column;align-items:stretch}.search{max-width:none}}
+        :root {
+            --primary: #155dfc;
+            --primary-dark: #1048c7;
+            --bg-page: #f8fafc;
+            --surface: #ffffff;
+            --border: #e2e8f0;
+            --text-main: #0f172a;
+            --text-muted: #64748b;
+            --radius-card: 16px;
+        }
+        *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+        body { font-family: 'Inter', sans-serif; background: var(--bg-page); color: var(--text-main); min-height: 100vh; display:flex;}
+        a { text-decoration:none; color:inherit;}
+        .shell { display:flex; width:100%; min-height:100vh;}
+        .sidebar { width:256px; min-height:100vh; background:#fff; border-right:1px solid var(--border); display:flex; flex-direction:column;}
+        .sidebar__brand { display:flex; align-items:center; gap:12px; padding:24px 24px 20px; border-bottom:1px solid var(--border);}
+        .sidebar__logo { width:40px; height:40px; background:linear-gradient(135deg, #155dfc 0%, #9810fa 100%); border-radius:10px; display:flex; align-items:center; justify-content:center; color:#fff; font-weight:700; font-size:18px;}
+        .sidebar__brand-name { font-size:16px; font-weight:700;}
+        .sidebar__brand-sub { font-size:12px; color:var(--text-muted);}
+        .sidebar__nav { flex:1; padding:16px; display:flex; flex-direction:column; gap:4px; overflow-y:auto;}
+        .sidebar__nav-link { display:flex; align-items:center; gap:12px; height:46px; padding:0 16px; border-radius:10px; font-size:15px; color:#334155; font-weight:500; transition:background .15s;}
+        .sidebar__nav-link:hover { background:#f1f5f9;}
+        .sidebar__nav-link--active { background:var(--primary); color:#fff; font-weight:600;}
+        .sidebar__nav-icon { width:20px; height:20px; flex-shrink:0;}
+        .sidebar__footer { border-top:1px solid var(--border); padding:16px; display:flex; flex-direction:column; gap:4px;}
+        .main { flex:1; min-width:0; display:flex; flex-direction:column;}
+        .topbar { background:#fff; border-bottom:1px solid var(--border); height:80px; padding:0 32px; display:flex; align-items:center; justify-content:space-between; gap:16px;}
+        .topbar__title { font-size:20px; font-weight:800; color:var(--text-main);}
+        .topbar__sub { font-size:13px; color:var(--text-muted);}
+        .page { flex:1; padding:32px;}
+        .card { background:#fff; border:1px solid var(--border); border-radius:var(--radius-card); padding:24px; box-shadow:0 1px 3px rgba(0,0,0,.04); margin-bottom:24px;}
+        .grid { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:14px; margin-bottom:20px;}
+        .tile { border:1px solid var(--border); border-radius:12px; padding:16px; background:#f8fafc;}
+        .tile span { font-size:12px; font-weight:600; color:var(--text-muted); text-transform:uppercase; display:block; margin-bottom:4px;}
+        .tile strong { font-size:18px; font-weight:800; color:var(--text-main);}
+        .table-wrap { overflow-x:auto; border-radius:12px; border:1px solid var(--border);}
+        table { width:100%; border-collapse:collapse; font-size:13px; text-align:left;}
+        th { background:#f1f5f9; padding:12px 16px; color:#475569; font-weight:700; border-bottom:1px solid var(--border); white-space:nowrap;}
+        td { padding:14px 16px; border-bottom:1px solid #f1f5f9; color:#334155; vertical-align:middle;}
+        tr:last-child td { border-bottom:0;}
+        tr:hover td { background:#fafafa;}
+        .btn { display:inline-flex; align-items:center; justify-content:center; height:34px; padding:0 12px; border-radius:8px; background:var(--primary); color:#fff; border:0; cursor:pointer; font-weight:600; font-size:13px; text-decoration:none; transition:all .15s;}
+        .btn:hover { opacity:.92; transform:translateY(-1px);}
+        .btn--sec { background:#fff; color:#334155; border:1px solid #cbd5e1;}
+        .btn--sec:hover { border-color:var(--primary); color:var(--primary); background:#f8fafc;}
+        .btn--amber { background:#d97706;}
+        .btn--amber:hover { background:#b45309;}
+        .pill { display:inline-flex; align-items:center; padding:3px 8px; border-radius:9999px; font-size:11px; font-weight:700; background:#f1f5f9; color:#475569;}
+        .pill--active { background:#dcfce7; color:#166534;}
+        .pill--warn { background:#fef3c7; color:#92400e;}
+        .pill--max { background:#fef2f2; color:#dc2626; border:1px solid #fecaca; font-weight:800;}
+        .flash { padding:12px 16px; border-radius:10px; margin-bottom:16px; font-size:14px; font-weight:600; }
+        .flash--succ { background:#ecfdf5; border:1px solid #a7f3d0; color:#065f46;}
+        .flash--err { background:#fef2f2; border:1px solid #fecaca; color:#991b1b;}
+        .modal-overlay { position:fixed; inset:0; background:rgba(15,23,42,.65); backdrop-filter:blur(4px); z-index:1000; display:flex; align-items:center; justify-content:center; padding:20px;}
+        .modal-box { background:#fff; border-radius:16px; width:100%; max-width:540px; padding:28px; box-shadow:0 20px 25px -5px rgba(0,0,0,.2);}
     </style>
 </head>
 <body>
 <div class="shell">
     <aside class="sidebar">
         <div class="sidebar__brand">
-            <div class="sidebar__logo"><span class="sidebar__logo-text">NU</span></div>
+            <div class="sidebar__logo"><span>NU</span></div>
             <div>
                 <div class="sidebar__brand-name">SA System</div>
                 <div class="sidebar__brand-sub">Supervisor</div>
             </div>
         </div>
-        <nav class="sidebar__nav" aria-label="Supervisor navigation">
+        <nav class="sidebar__nav">
             <a href="dashboard.php" class="sidebar__nav-link">
-                <svg class="sidebar__nav-icon" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M2.5 7.5L10 2.5L17.5 7.5V17.5H12.5V12.5H7.5V17.5H2.5V7.5Z" stroke="#364153" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <svg class="sidebar__nav-icon" viewBox="0 0 20 20" fill="none"><path d="M2.5 7.5L10 2.5L17.5 7.5V17.5H12.5V12.5H7.5V17.5H2.5V7.5Z" stroke="#364153" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 Dashboard
             </a>
             <a href="attendance.php" class="sidebar__nav-link">
-                <svg class="sidebar__nav-icon" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M17 5L8 14.5L3.5 10" stroke="#364153" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <svg class="sidebar__nav-icon" viewBox="0 0 20 20" fill="none"><path d="M17 5L8 14.5L3.5 10" stroke="#364153" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 Attendance
             </a>
             <a href="evaluation.php" class="sidebar__nav-link">
-                <svg class="sidebar__nav-icon" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 2l2 5.5H17l-4 3 1.5 5.5L10 13l-4.5 3L7 11 3 8h5L10 2Z" stroke="#364153" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <svg class="sidebar__nav-icon" viewBox="0 0 20 20" fill="none"><path d="M10 2l2 5.5H17l-4 3 1.5 5.5L10 13l-4.5 3L7 11 3 8h5L10 2Z" stroke="#364153" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 Evaluation
             </a>
+            <a href="duty_excuses.php" class="sidebar__nav-link">
+                <svg class="sidebar__nav-icon" viewBox="0 0 20 20" fill="none"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" stroke="#364153" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                Duty Excuses
+            </a>
             <a href="reports.php" class="sidebar__nav-link">
-                <svg class="sidebar__nav-icon" viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="2.5" y="2.5" width="15" height="15" rx="2" stroke="#364153" stroke-width="1.5"/><path d="M6 14V10M10 14V7M14 14V11" stroke="#364153" stroke-width="1.5" stroke-linecap="round"/></svg>
+                <svg class="sidebar__nav-icon" viewBox="0 0 20 20" fill="none"><rect x="2.5" y="2.5" width="15" height="15" rx="2" stroke="#364153" stroke-width="1.5"/><path d="M6 14V10M10 14V7M14 14V11" stroke="#364153" stroke-width="1.5" stroke-linecap="round"/></svg>
                 Reports
             </a>
-            <a href="students.php" class="sidebar__nav-link sidebar__nav-link--active" aria-current="page">
-                <svg class="sidebar__nav-icon" viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="10" cy="6.5" r="3" stroke="white" stroke-width="1.5"/><path d="M3.5 17c0-3.5 2.9-6 6.5-6s6.5 2.5 6.5 6" stroke="white" stroke-width="1.5" stroke-linecap="round"/></svg>
+            <a href="students.php" class="sidebar__nav-link sidebar__nav-link--active">
+                <svg class="sidebar__nav-icon" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="6.5" r="3" stroke="white" stroke-width="1.5"/><path d="M3.5 17c0-3.5 2.9-6 6.5-6s6.5 2.5 6.5 6" stroke="white" stroke-width="1.5" stroke-linecap="round"/></svg>
                 Students
             </a>
         </nav>
         <div class="sidebar__footer">
             <a href="logout.php" class="sidebar__nav-link">
-                <svg class="sidebar__nav-icon" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M13 15l5-5-5-5M18 10H8" stroke="#364153" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 17.5H3.5a.5.5 0 0 1-.5-.5V3a.5.5 0 0 1 .5-.5H8" stroke="#364153" stroke-width="1.5" stroke-linecap="round"/></svg>
+                <svg class="sidebar__nav-icon" viewBox="0 0 20 20" fill="none"><path d="M13 15l5-5-5-5M18 10H8" stroke="#364153" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 17.5H3.5a.5.5 0 0 1-.5-.5V3a.5.5 0 0 1 .5-.5H8" stroke="#364153" stroke-width="1.5" stroke-linecap="round"/></svg>
                 Sign Out
             </a>
         </div>
     </aside>
 
-    <main class="main">
+    <div class="main">
         <header class="topbar">
             <div>
-                <div class="topbar__title">Student List Management</div>
-                <div class="topbar__sub"><?php echo h($supervisorOffice !== '' ? $supervisorOffice : 'Assigned Office'); ?> · <?php echo h($termLabel); ?></div>
+                <div class="topbar__title">Assigned Student Assistants</div>
+                <div class="topbar__sub"><?php echo h($supervisorOffice); ?> • <?php echo h($termLabel); ?></div>
             </div>
             <div class="topbar__right">
-                <div class="topbar__notif-btn" role="button" aria-label="Notifications" tabindex="0">
-                    <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z" fill="#4A5565"/></svg>
-                    <span class="topbar__notif-dot" aria-hidden="true" style="display:none"></span>
+                <div class="topbar__notif" aria-label="Notifications">
+                    <svg class="topbar__icon" viewBox="0 0 20 20" fill="none"><path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z" fill="#364153"/></svg>
+                    <span class="topbar__notif-dot" style="display:none"></span>
                 </div>
-                <a href="profile.php" class="btn" style="background:#eef2ff;color:#003087;"><?php echo h($supervisorName); ?></a>
-                <a href="logout.php" class="btn">Logout</a>
+                <a href="profile.php" class="btn btn--sec"><?php echo h($supervisorName); ?></a>
             </div>
         </header>
 
-        <script src="../assets/js/admin-notifications.js?v=20260922"></script>
+        <main class="page">
+            <?php if ($shuffleFlash !== ''): ?><div class="flash flash--succ">✓ <?php echo h($shuffleFlash); ?></div><?php endif; ?>
+            <?php if ($shuffleFlashError !== ''): ?><div class="flash flash--err">⚠️ <?php echo h($shuffleFlashError); ?></div><?php endif; ?>
 
-        <section class="page">
-            <?php if ($shuffleFlash !== ''): ?><div class="card" style="padding:14px;font-weight:700;color:#155dfc;"><?php echo h($shuffleFlash); ?></div><?php endif; ?>
-            <div class="stats">
-                <div class="stat"><div class="stat__label">Total Students</div><div class="stat__value"><?php echo (int) $totalStudents; ?></div></div>
-                <div class="stat"><div class="stat__label">Active</div><div class="stat__value"><?php echo (int) $activeStudents; ?></div></div>
-                <div class="stat"><div class="stat__label">Avg Rating</div><div class="stat__value"><?php echo $avgRating > 0 ? number_format($avgRating, 1) . '/5' : 'N/A'; ?></div></div>
-                <div class="stat"><div class="stat__label">Departments</div><div class="stat__value"><?php echo (int) $departmentCount; ?></div></div>
+            <div class="grid">
+                <div class="tile"><span>Assigned Students</span><strong><?php echo (int) $totalStudents; ?></strong></div>
+                <div class="tile"><span>Average Rating</span><strong><?php echo $avgRating > 0 ? number_format($avgRating, 1) . ' / 5.0' : 'N/A'; ?></strong></div>
+                <div class="tile"><span>Active Office</span><strong><?php echo h($supervisorOffice); ?></strong></div>
             </div>
 
-            <div class="card">
-                <div class="card__head">
-                    <div class="card__title">Student Directory</div>
-                        <div class="card__meta">Showing <?php echo (int) $resultCount; ?> assigned student<?php echo (int) $resultCount === 1 ? '' : 's'; ?> for <?php echo h($supervisorOffice !== '' ? $supervisorOffice : 'assigned office'); ?>.</div>
-                </div>
-                <form method="get" class="toolbar">
-                    <input class="search" type="text" name="q" value="<?php echo h($search); ?>" placeholder="Search students by name, ID, or program" />
-                    <button class="btn" type="submit">Search</button>
-                </form>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Student</th>
-                            <th>Student ID</th>
-                            <th>Program</th>
-                            <th>Office</th>
-                            <th>Accepted Schedules</th>
-                            <th>Hours</th>
-                            <th>Rating</th>
-                            <th>Status</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                    <?php if (!empty($students)): ?>
-                        <?php foreach ($students as $studentRow): ?>
-                            <?php
-                                $fullName = trim((string) ($studentRow['first_name'] ?? '') . ' ' . (string) ($studentRow['last_name'] ?? ''));
-                                $rating = (float) ($studentRow['avg_rating'] ?? 0.0);
-                            ?>
-                            <tr>
-                                <td>
-                                    <strong><?php echo h($fullName !== '' ? $fullName : 'Unassigned Student'); ?></strong>
-                                    <div class="muted"><?php echo h((string) ($studentRow['year_level'] ?? '')); ?></div>
-                                </td>
-                                <td><?php echo h((string) ($studentRow['student_id_number'] ?? '')); ?></td>
-                                <td><?php echo h((string) ($studentRow['program'] ?? '-')); ?></td>
-                                <td><span class="pill"><?php echo h((string) ($studentRow['office_name'] ?? 'Unassigned')); ?></span></td>
-                                <td><?php echo (int) ($studentRow['deployed_schedule_count'] ?? 0); ?></td>
-                                <td><?php echo number_format((float) ($studentRow['rendered_hours'] ?? 0), 1); ?>h</td>
-                                <td><?php echo $rating > 0 ? number_format($rating, 1) . '/5' : 'N/A'; ?></td>
-                                <td><span class="pill pill--active">Active</span></td>
-                                <td>
-                                    <a class="btn" href="student_profile.php?application_id=<?php echo (int) ($studentRow['application_id'] ?? 0); ?>">View</a>
-                                    <button class="btn shuffle-open" type="button" data-student-id="<?php echo (int) ($studentRow['student_id'] ?? 0); ?>" style="margin-top:6px;background:#b45309;">Request shuffle</button>
-                                </td>
-                            </tr>
-                        <?php endforeach; ?>
-                    <?php else: ?>
-                        <tr><td class="empty" colspan="9">No assigned students found for this office.</td></tr>
-                    <?php endif; ?>
-                    </tbody>
-                </table>
-            </div>
-
-            <div id="shuffle-modal" hidden style="position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:1000;padding:24px;">
-                <div class="card" style="max-width:560px;margin:8vh auto;padding:24px;">
-                    <h2 style="margin-bottom:8px;">Request Student Shuffle</h2>
-                    <p class="muted" style="margin-bottom:18px;">Explain the support or performance concern objectively. This request will be reviewed by Admin and will not immediately change the assignment.</p>
-                    <form method="post" action="shuffle_request.php">
-                        <?php echo sams_csrf_input_field(); ?>
-                        <input type="hidden" name="from_student_id" id="shuffle-from-student">
-                        <label style="display:block;font-weight:700;margin-bottom:6px;" for="shuffle-to-student">Proposed replacement student (optional)</label>
-                        <select name="to_student_id" id="shuffle-to-student" style="width:100%;height:40px;margin-bottom:14px;">
-                            <option value="0">Let Admin choose</option>
-                            <?php foreach ($replacementStudents as $replacement): ?>
-                                <option value="<?php echo (int) $replacement['student_id']; ?>"><?php echo h(trim($replacement['first_name'] . ' ' . $replacement['last_name']) . ' - ' . $replacement['student_id_number']); ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                        <label style="display:block;font-weight:700;margin-bottom:6px;" for="shuffle-reason">Reason *</label>
-                        <textarea name="reason" id="shuffle-reason" required rows="4" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:8px;" placeholder="Describe the support or assignment concern"></textarea>
-                        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px;"><button class="btn" type="button" id="shuffle-cancel" style="background:#e5e7eb;color:#364153;">Cancel</button><button class="btn" type="submit">Send request</button></div>
+            <section class="card">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:12px;">
+                    <div>
+                        <h2 style="font-size:18px;font-weight:800;color:var(--text-main);">Student Roster</h2>
+                        <p style="font-size:13px;color:var(--text-muted);margin-top:2px;">Performance evaluation must be completed before an office reshuffle request can be submitted.</p>
+                    </div>
+                    <form method="get" style="display:flex;gap:8px;">
+                        <input type="text" name="q" value="<?php echo h($search); ?>" placeholder="Search student..." style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;width:220px;" />
+                        <button class="btn btn--sec" type="submit">Search</button>
                     </form>
                 </div>
-            </div>
-        </section>
-    </main>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Student</th>
+                                <th>Student ID</th>
+                                <th>Program</th>
+                                <th>Hours Rendered</th>
+                                <th>Evaluation</th>
+                                <th>Reshuffles</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        <?php if (!empty($students)): ?>
+                            <?php foreach ($students as $studentRow): ?>
+                                <?php
+                                    $fullName = trim((string) ($studentRow['first_name'] ?? '') . ' ' . (string) ($studentRow['last_name'] ?? ''));
+                                    $rating = (float) ($studentRow['avg_rating'] ?? 0.0);
+                                    $hasEval = (int) ($studentRow['has_evaluation'] ?? 0) > 0;
+                                    $shuffCount = (int) ($studentRow['reshuffle_count'] ?? 0);
+                                    $shuffStatus = (string) ($studentRow['shuffle_request_status'] ?? '');
+                                    $studentId = (int) ($studentRow['student_id'] ?? 0);
+                                    $appId = (int) ($studentRow['application_id'] ?? 0);
+                                ?>
+                                <tr>
+                                    <td>
+                                        <strong><?php echo h($fullName !== '' ? $fullName : 'Student Assistant'); ?></strong>
+                                        <div style="font-size:12px;color:var(--text-muted);"><?php echo h((string) ($studentRow['year_level'] ?? '')); ?></div>
+                                    </td>
+                                    <td><code><?php echo h((string) ($studentRow['student_id_number'] ?? '')); ?></code></td>
+                                    <td><?php echo h((string) ($studentRow['program'] ?? '-')); ?></td>
+                                    <td><?php echo number_format((float) ($studentRow['rendered_hours'] ?? 0), 1); ?> hrs</td>
+                                    <td>
+                                        <?php if ($hasEval): ?>
+                                            <span class="pill pill--active">Evaluated (<?php echo number_format($rating, 1); ?>/5)</span>
+                                        <?php else: ?>
+                                            <span class="pill pill--warn">Pending Evaluation</span>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td>
+                                        <?php if ($shuffCount >= 3): ?>
+                                            <span class="pill pill--max">3/3 Max Reached</span>
+                                        <?php elseif ($shuffCount > 0): ?>
+                                            <span class="pill pill--warn"><?php echo $shuffCount; ?> / 3 Transfers</span>
+                                        <?php else: ?>
+                                            <span class="pill">0 / 3 Transfers</span>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td>
+                                        <?php if ($shuffStatus === 'pending'): ?>
+                                            <span class="pill pill--warn">Reshuffle Pending</span>
+                                        <?php else: ?>
+                                            <span class="pill pill--active">Active</span>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td>
+                                        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                                            <a class="btn btn--sec" href="student_profile.php?application_id=<?php echo $appId; ?>" style="height:32px;font-size:12px;padding:0 10px;">View</a>
+                                            <?php if (!$hasEval): ?>
+                                                <a class="btn" href="evaluation.php?application_id=<?php echo $appId; ?>" style="height:32px;font-size:12px;padding:0 10px;">Evaluate First</a>
+                                            <?php elseif ($shuffCount >= 3): ?>
+                                                <button class="btn btn--sec" type="button" disabled style="height:32px;font-size:12px;padding:0 10px;opacity:.5;cursor:not-allowed;" title="Maximum 3 reshuffles reached">Max Reshuffles</button>
+                                            <?php else: ?>
+                                                <button class="btn btn--amber shuffle-open"
+                                                        type="button"
+                                                        style="height:32px;font-size:12px;padding:0 10px;"
+                                                        data-student-id="<?php echo $studentId; ?>"
+                                                        data-student-name="<?php echo h($fullName); ?>"
+                                                        data-reshuffle-count="<?php echo $shuffCount; ?>">
+                                                    Reshuffle
+                                                </button>
+                                            <?php endif; ?>
+                                        </div>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        <?php else: ?>
+                            <tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text-muted);">No assigned students found for this office.</td></tr>
+                        <?php endif; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </main>
+    </div>
 </div>
-</body>
+
+<!-- SHUFFLE REQUEST MODAL -->
+<div id="shuffle-modal" class="modal-overlay" style="display:none;">
+    <div class="modal-box">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;">
+            <div>
+                <h2 style="font-size:20px;font-weight:800;color:var(--text-main);">Request Student Reshuffle</h2>
+                <div id="shuffle-modal-meta" style="font-size:13px;color:var(--text-muted);margin-top:2px;"></div>
+            </div>
+            <button type="button" id="shuffle-cancel" style="background:none;border:0;font-size:22px;cursor:pointer;color:#94a3b8;">&times;</button>
+        </div>
+        <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px;line-height:1.4;">
+            Explain the assignment or operational reason for requesting a student transfer. This request will be submitted to Admin for review. (Maximum of 3 reshuffles per student).
+        </p>
+
+        <form method="post" action="shuffle_request.php">
+            <?php echo sams_csrf_input_field(); ?>
+            <input type="hidden" name="from_student_id" id="shuffle-from-student">
+            <input type="hidden" name="return_to" value="students.php">
+
+            <div style="margin-bottom:12px;">
+                <label style="display:block;font-weight:600;font-size:13px;margin-bottom:6px;" for="shuffle-to-student">Proposed replacement student (optional)</label>
+                <select name="to_student_id" id="shuffle-to-student" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:13px;">
+                    <option value="0">Let Admin choose replacement</option>
+                    <?php foreach ($replacementStudents as $replacement): ?>
+                        <option value="<?php echo (int) $replacement['student_id']; ?>">
+                            <?php echo h(trim($replacement['first_name'] . ' ' . $replacement['last_name']) . ' - ' . $replacement['student_id_number']); ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+
+            <div style="margin-bottom:16px;">
+                <label style="display:block;font-weight:600;font-size:13px;margin-bottom:6px;" for="shuffle-reason">Reason for Reshuffle *</label>
+                <textarea name="reason" id="shuffle-reason" required rows="4" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:13px;" placeholder="Describe the office schedule requirements, skills re-matching, or support rationale..."></textarea>
+            </div>
+
+            <div style="display:flex;justify-content:flex-end;gap:8px;">
+                <button class="btn btn--sec" type="button" id="shuffle-close-btn">Cancel</button>
+                <button class="btn btn--amber" type="submit">Submit Reshuffle Request</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script src="../assets/js/admin-notifications.js?v=20260922"></script>
 <script>
 document.querySelectorAll('.shuffle-open').forEach(function (button) {
     button.addEventListener('click', function () {
-        document.getElementById('shuffle-from-student').value = button.dataset.studentId;
-        document.getElementById('shuffle-modal').hidden = false;
+        const studentId = this.dataset.studentId;
+        const studentName = this.dataset.studentName;
+        const count = parseInt(this.dataset.reshuffleCount, 10) || 0;
+
+        document.getElementById('shuffle-from-student').value = studentId;
+        document.getElementById('shuffle-modal-meta').textContent = studentName + ' • Current Transfers: ' + count + ' of 3';
+        document.getElementById('shuffle-modal').style.display = 'flex';
     });
 });
-document.getElementById('shuffle-cancel').addEventListener('click', function () {
-    document.getElementById('shuffle-modal').hidden = true;
-});
+const closeModal = () => { document.getElementById('shuffle-modal').style.display = 'none'; };
+document.getElementById('shuffle-cancel').addEventListener('click', closeModal);
+document.getElementById('shuffle-close-btn').addEventListener('click', closeModal);
 </script>
+</body>
 </html>

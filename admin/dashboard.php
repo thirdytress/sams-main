@@ -128,6 +128,27 @@ if ($pendingApplications > 0) {
     ];
 }
 
+try {
+    $pendingShuffles = (int) $pdo->query("SELECT COUNT(*) FROM shuffle_requests WHERE status = 'pending'")->fetchColumn();
+    if ($pendingShuffles > 0) {
+        $alerts[] = [
+            'tone' => 'warn',
+            'title' => $pendingShuffles . ' supervisor reshuffle request' . ($pendingShuffles > 1 ? 's' : '') . ' pending review',
+            'body' => 'Supervisors have submitted student transfer requests after evaluation',
+        ];
+    }
+    $maxShuffles = (int) $pdo->query("SELECT COUNT(*) FROM students WHERE reshuffle_count >= 3")->fetchColumn();
+    if ($maxShuffles > 0) {
+        $alerts[] = [
+            'tone' => 'info',
+            'title' => $maxShuffles . ' student' . ($maxShuffles > 1 ? 's' : '') . ' reached 3-reshuffle limit',
+            'body' => 'Maximum allowed office transfers reached for these students',
+        ];
+    }
+} catch (Throwable $e) {
+    // ignore
+}
+
 $heroLatestApplication = $recentApplications[0] ?? null;
 $heroLatestApplicant = trim((string) ($heroLatestApplication['first_name'] ?? '') . ' ' . (string) ($heroLatestApplication['last_name'] ?? ''));
 $heroLatestApplicant = $heroLatestApplicant !== '' ? $heroLatestApplicant : 'No recent applicant';

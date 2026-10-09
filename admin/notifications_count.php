@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../config/bootstrap.php';
 require_once __DIR__ . '/../config/admin_notifications.php';
+require_once __DIR__ . '/../config/reshuffle.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -14,6 +15,8 @@ if (!$user || (($user['role'] ?? null) !== 'admin')) {
 }
 
 $pdo = sams_pdo();
+sams_reshuffle_ensure_schema($pdo);
+
 try {
     $adminUserId = (int) ($user['user_id'] ?? 0);
 
@@ -69,7 +72,21 @@ try {
         }
     }
 
-    $count = $reportCount + $meetingCount + $availabilityCount + $applicationCount + $dutyExcuseCount;
+    $shuffleCount = 0;
+    try {
+        $shuffleCount = (int) $pdo->query("SELECT COUNT(*) FROM shuffle_requests WHERE status = 'pending'")->fetchColumn();
+    } catch (Throwable $e) {
+        $shuffleCount = 0;
+    }
+
+    $maxShuffleCount = 0;
+    try {
+        $maxShuffleCount = (int) $pdo->query("SELECT COUNT(*) FROM students WHERE reshuffle_count >= 3")->fetchColumn();
+    } catch (Throwable $e) {
+        $maxShuffleCount = 0;
+    }
+
+    $count = $reportCount + $meetingCount + $availabilityCount + $applicationCount + $dutyExcuseCount + $shuffleCount + $maxShuffleCount;
     echo json_encode(['success' => true, 'count' => $count]);
 } catch (Throwable $e) {
     echo json_encode(['success' => false, 'message' => 'db error']);

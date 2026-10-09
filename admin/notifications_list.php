@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../config/bootstrap.php';
 require_once __DIR__ . '/../config/admin_notifications.php';
+require_once __DIR__ . '/../config/reshuffle.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -14,6 +15,8 @@ if (!$user || (($user['role'] ?? null) !== 'admin')) {
 }
 
 $pdo = sams_pdo();
+sams_reshuffle_ensure_schema($pdo);
+
 try {
     $adminUserId = (int) ($user['user_id'] ?? 0);
     if ($adminUserId > 0) {
@@ -185,6 +188,57 @@ try {
         } catch (Throwable $exception) {
             // ignore
         }
+    }
+
+    // Pending Shuffle Requests
+    try {
+        $shuffleStmt = $pdo->query(
+            "SELECT sr.request_id, sr.reason, sr.created_at, sup.office_name,
+                    CONCAT(uFrom.first_name, ' ', uFrom.last_name) AS from_name,
+                    sFrom.student_id_number AS from_code, sFrom.reshuffle_count
+             FROM shuffle_requests sr
+             INNER JOIN supervisors sup ON sup.supervisor_id = sr.supervisor_id
+             INNER JOIN students sFrom ON sFrom.student_id = sr.from_student_id
+             INNER JOIN users uFrom ON uFrom.user_id = sFrom.user_id
+             WHERE sr.status = 'pending'
+             ORDER BY sr.created_at DESC
+             LIMIT 8"
+        );
+        $shuffleRows = $shuffleStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        foreach ($shuffleRows as $sr) {
+            $items[] = [
+                'type' => 'shuffle_request',
+                'notification_id' => (int) $sr['request_id'],
+                'student_code' => (string) ($sr['from_code'] ?? ''),
+                'title' => 'Reshuffle Request: ' . (string) ($sr['from_name'] ?? 'Student'),
+                'preferred_office' => (string) ($sr['office_name'] ?? ''),
+                'snippet' => 'Supervisor requested office transfer for ' . (string) ($sr['from_name'] ?? 'Student') . '. Reason: ' . mb_substr((string) $sr['reason'], 0, 70),
+                'created_at' => (string) ($sr['created_at'] ?? ''),
+                'link_url' => 'shuffle_requests.php',
+            ];
+        }
+    } catch (Throwable $exception) {
+        // ignore
+    }
+
+    // Students at 3/3 Maximum Reshuffle Limit
+    try {
+        $maxStudents = sams_admin_get_max_reshuffle_students($pdo);
+        foreach ($maxStudents as $ms) {
+            $msName = trim((string) $ms['first_name'] . ' ' . (string) $ms['last_name']);
+            $items[] = [
+                'type' => 'max_reshuffle',
+                'notification_id' => (int) $ms['student_id'],
+                'student_code' => (string) ($ms['student_id_number'] ?? ''),
+                'title' => '⚠️ Max 3x Reshuffles Reached: ' . ($msName !== '' ? $msName : 'Student'),
+                'preferred_office' => (string) ($ms['office_name'] ?? ''),
+                'snippet' => 'Student ' . $msName . ' (' . (string) $ms['student_id_number'] . ') has reached the maximum 3 office transfers and cannot be reshuffled further.',
+                'created_at' => date('Y-m-d H:i:s'),
+                'link_url' => 'shuffle_requests.php',
+            ];
+        }
+    } catch (Throwable $exception) {
+        // ignore
     }
 
     usort(
