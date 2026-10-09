@@ -22,6 +22,7 @@ Thumbs.db
 
 # Databases / dumps / backups
 *.sql
+!tools/migrations/005_add_temporary_duty_requests.sql
 *.sqlite
 *.sqlite3
 *.bak

@@ -1238,6 +1238,12 @@ try {
         </svg>
         My Schedule
       </a>
+      <a class="nav-item" href="temporary_duty_request.php">
+        <svg class="nav-item__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path d="M12 4v16M4 12h16" stroke="#101828" stroke-width="1.8" stroke-linecap="round" />
+        </svg>
+        Temporary Duty Request
+      </a>
       <a class="nav-item" href="attendance_history.php">
         <svg class="nav-item__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
           <path d="M5 4h10l4 4v12H5z" stroke="#101828" stroke-width="1.8" stroke-linejoin="round" fill="#ffffff" />

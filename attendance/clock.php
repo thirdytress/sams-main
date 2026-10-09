@@ -65,6 +65,11 @@ try {
     echo json_encode(['success' => false, 'message' => 'You are not assigned to this schedule']);
     exit;
   }
+  if (!empty($sched['scheduled_date']) && (string) $sched['scheduled_date'] !== date('Y-m-d')) {
+    http_response_code(403);
+    echo json_encode(['success' => false, 'message' => 'This duty schedule is not active today']);
+    exit;
+  }
 
   $applicationId = (int) ($sched['application_id'] ?? 0);
   $termId = (int) ($sched['term_id'] ?? 0);

@@ -82,7 +82,10 @@ try {
     $schedStmt = $pdo->prepare('
         SELECT duty_id, start_time, end_time, status, COALESCE(NULLIF(TRIM(office_name), ""), :pref_office) AS office_name
         FROM duty_schedules
-        WHERE application_id = :app_id AND day_of_week = :day AND status = "deployed"
+        WHERE application_id = :app_id
+          AND day_of_week = :day
+          AND status = "deployed"
+          AND (scheduled_date IS NULL OR scheduled_date = CURDATE())
         ORDER BY start_time ASC
     ');
     $schedStmt->execute([

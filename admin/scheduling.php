@@ -1257,6 +1257,21 @@ if ($selectedStudentId > 0) {
         $availStmt = $pdo->prepare("SELECT day_of_week, start_time AS time_start, end_time AS time_end, {$availabilityNotesSelect}, {$availabilityFlagSelect} FROM availability WHERE application_id = :aid AND term_id = :term_id ORDER BY FIELD(day_of_week, 'Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'), start_time ASC");
         $availStmt->execute(['aid' => (int)$selectedPreferred['application_id'], 'term_id' => (int)$selectedPreferred['term_id']]);
         $selectedPreferred['availability'] = $availStmt->fetchAll(PDO::FETCH_ASSOC);
+        $classScheduleStmt = $pdo->prepare(
+            'SELECT day_of_week, start_time AS time_start, end_time AS time_end, subject_code
+             FROM class_schedules
+             WHERE application_id = :application_id AND term_id = :term_id
+             ORDER BY FIELD(day_of_week, "Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"), start_time ASC'
+        );
+        try {
+            $classScheduleStmt->execute([
+                'application_id' => (int) $selectedPreferred['application_id'],
+                'term_id' => (int) $selectedPreferred['term_id'],
+            ]);
+            $selectedPreferred['class_schedules'] = $classScheduleStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        } catch (Throwable $exception) {
+            $selectedPreferred['class_schedules'] = [];
+        }
 
         if (schedule_has_column($pdo, 'document_uploads', 'application_id')
             && schedule_has_column($pdo, 'document_uploads', 'document_type')
@@ -1594,9 +1609,17 @@ $hours = range($calendarStartHour, $calendarEndHour); // include last hour (e.g.
                                     <?php endif; ?>
                                 </div>
                                 <section class="calendar-card" aria-label="Weekly schedule calendar" style="margin-left:auto;margin-right:auto;">
-                                    <div class="cal-days" role="row"><div class="cal-days__time-gutter" aria-hidden="true"></div><?php foreach ($days as $day): ?><div class="cal-days__day"><div class="cal-days__day-name"><?= h($dayShort[$day]) ?></div><div class="cal-days__day-num"><?= h($day) ?></div></div><?php endforeach; ?></div><div class="cal-body" role="grid" aria-label="Calendar time grid"><div class="cal-time-col" aria-hidden="true"><?php foreach ($hours as $hour): ?><div class="cal-time-slot"><?= date('g A', strtotime(sprintf('%02d:00:00', $hour))) ?></div><?php endforeach; ?></div><?php foreach ($days as $day): ?><div class="cal-day-col" role="gridcell" aria-label="<?= h($day) ?>"><?php foreach ($hours as $_): ?><div class="cal-day-col__slot"></div><?php endforeach; ?>                                    <?php foreach ($schedules as $schedule): ?><?php $scheduleDay = schedule_day_label((string) $schedule['day_of_week']); if ($scheduleDay !== $day || $schedule['status'] === 'declined') continue; ?><?php $studentName = trim((string) $schedule['first_name'] . ' ' . (string) $schedule['last_name']); $office = (string) $schedule['office_name']; $statusStr = strtolower(trim($schedule['status'])); $color = match($statusStr) { 'deployed' => 'blue', 'accepted' => 'green', 'assigned', 'pending' => 'red', default => 'yellow' }; ?>                                    <div class="sched-block sched-block--<?= h($color) ?>" data-duty-id="<?= (int) $schedule['id'] ?>" style="<?= h(calendar_block_style((string) $schedule['time_start'], (string) $schedule['time_end'])) ?>" title="<?= h($studentName . ' - ' . $office) ?>"><div class="sched-block__name"><?= h($studentName) ?></div><div class="sched-block__time"><?= h(display_time((string) $schedule['time_start']) . ' – ' . display_time((string) $schedule['time_end'])) ?></div><div class="sched-block__loc"><?= h($office) ?></div></div><?php endforeach; ?>
+                                    <div class="cal-days" role="row"><div class="cal-days__time-gutter" aria-hidden="true"></div><?php foreach ($days as $day): ?><div class="cal-days__day"><div class="cal-days__day-name"><?= h($dayShort[$day]) ?></div><div class="cal-days__day-num"><?= h($day) ?></div></div><?php endforeach; ?></div><div class="cal-body" role="grid" aria-label="Calendar time grid"><div class="cal-time-col" aria-hidden="true"><?php foreach ($hours as $hour): ?><div class="cal-time-slot"><?= date('g A', strtotime(sprintf('%02d:00:00', $hour))) ?></div><?php endforeach; ?></div><?php foreach ($days as $day): ?>                                    <div class="cal-day-col" role="gridcell" aria-label="<?= h($day) ?>"><?php foreach ($hours as $_): ?><div class="cal-day-col__slot"></div><?php endforeach; ?>
+                                    <?php if ($selectedPreferred && !empty($selectedPreferred['class_schedules'])): foreach ($selectedPreferred['class_schedules'] as $classSchedule): ?><?php if ((string) $classSchedule['day_of_week'] !== $day) continue; ?><div class="sched-block sched-block--blue" style="<?= h(calendar_block_style((string) $classSchedule['time_start'], (string) $classSchedule['time_end'])) ?>" title="<?= h('Class schedule - ' . (string) ($classSchedule['subject_code'] ?? '')) ?>"><div class="sched-block__name"><?= h((string) ($classSchedule['subject_code'] ?? 'Class')) ?></div><div class="sched-block__time"><?= h(display_time((string) $classSchedule['time_start']) . ' – ' . display_time((string) $classSchedule['time_end'])) ?></div><div class="sched-block__loc">Class Schedule</div></div><?php endforeach; endif; ?>
+                                    <?php foreach ($schedules as $schedule): ?><?php $scheduleDay = schedule_day_label((string) $schedule['day_of_week']); if ($scheduleDay !== $day || $schedule['status'] === 'declined') continue; ?><?php $studentName = trim((string) $schedule['first_name'] . ' ' . (string) $schedule['last_name']); $office = (string) $schedule['office_name']; $statusStr = strtolower(trim($schedule['status'])); $color = match($statusStr) { 'deployed', 'accepted' => 'green', 'assigned', 'pending' => 'red', default => 'yellow' }; ?>                                    <div class="sched-block sched-block--<?= h($color) ?>" data-duty-id="<?= (int) $schedule['id'] ?>" style="<?= h(calendar_block_style((string) $schedule['time_start'], (string) $schedule['time_end'])) ?>" title="<?= h($studentName . ' - ' . $office) ?>"><div class="sched-block__name"><?= h($studentName) ?></div><div class="sched-block__time"><?= h(display_time((string) $schedule['time_start']) . ' – ' . display_time((string) $schedule['time_end'])) ?></div><div class="sched-block__loc"><?= h($office) ?></div></div><?php endforeach; ?>
                                     <?php foreach ($requestedSchedules as $requested): ?><?php if ($requested['day_of_week'] !== $day) continue; ?><div class="sched-block sched-block--blue" style="<?= h(calendar_block_style((string) $requested['time_start'], (string) $requested['time_end'])) ?>;outline:3px solid #93c5fd;" title="<?= h($requested['student_name'] . ' - Requested availability') ?>"><div class="sched-block__name"><?= h($requested['student_name']) ?></div><div class="sched-block__time"><?= h(display_time((string) $requested['time_start']) . ' – ' . display_time((string) $requested['time_end'])) ?></div><div class="sched-block__loc">Requested change · <?= h($requested['office_name']) ?></div></div><?php endforeach; ?></div><?php endforeach; ?></div>
                                 </section>
+                                <?php if ($selectedPreferred): ?>
+                                    <div style="display:flex;gap:18px;align-items:center;margin:12px 0 0;color:#4b5563;font-size:13px;">
+                                        <span><span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:#2563eb;vertical-align:-1px;margin-right:5px;"></span>Class Schedule (from COR)</span>
+                                        <span><span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:#16a34a;vertical-align:-1px;margin-right:5px;"></span>Duty Schedule</span>
+                                    </div>
+                                <?php endif; ?>
                                 <?php
                                 $isStudentDeployed = false;
                                 if (!empty($schedules)) {
@@ -2097,6 +2120,29 @@ function corParseFromUrl(applicationId) {
     .then(function(parsed) {
         corReaderParsedData = parsed;
         corRenderParsedData(parsed);
+        return fetch('save_class_schedules.php', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                application_id: applicationId,
+                class_schedules: parsed.classSchedules || []
+            })
+        });
+    })
+    .then(function(response) {
+        if (!response) return null;
+        if (!response.ok) throw new Error('Failed to save class schedules');
+        return response.json();
+    })
+    .then(function(result) {
+        if (result && result.success) {
+            var notice = document.createElement('div');
+            notice.className = 'cor-no-data';
+            notice.style.color = '#166534';
+            notice.textContent = 'Class schedules saved. Refresh the Scheduling page to show the blue calendar blocks.';
+            readerContent.appendChild(notice);
+        }
     })
     .catch(function(err) {
         readerContent.innerHTML = '<div class="cor-no-data"><svg width="48" height="48" fill="none" stroke="#9ca3af" stroke-width="1.5" viewBox="0 0 24 24"><path d="M12 9v3m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg><div style="margin-top:8px;font-weight:600;">Unable to parse COR</div><div style="margin-top:4px;font-size:13px;">' + (err.message || 'Unknown error') + '</div></div>';

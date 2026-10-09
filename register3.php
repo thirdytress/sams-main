@@ -63,6 +63,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && empty($_GET['finalize'])) {
     $work_location = trim($_POST['work_location'] ?? '');
     $skills        = trim($_POST['skills'] ?? '');
     $availabilityForm = $_POST['availability'] ?? [];
+    $classSchedulesJson = trim((string) ($_POST['class_schedules_json'] ?? ''));
+    $classSchedules = json_decode($classSchedulesJson, true);
+    if (!is_array($classSchedules)) {
+        $classSchedules = [];
+    }
     $availabilityEntries = [];
     $totalAvailabilityHours = 0.0;
     $dailyAvailabilityHours = [];
@@ -138,6 +143,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && empty($_GET['finalize'])) {
                 'skills' => $skills,
                 'availability' => $availabilityEntries,
                 'availability_form' => $availabilityForm,
+                'class_schedules' => $classSchedules,
             ],
         ]);
 
@@ -429,6 +435,35 @@ if (isset($_GET['finalize'])) {
                     $availabilityParams['is_available'] = $isAvailable ? 1 : 0;
                 }
                 $availabilityStatement->execute($availabilityParams);
+            }
+
+            if (sams_column_exists($pdo, 'class_schedules', 'application_id')) {
+                $classScheduleStatement = $pdo->prepare(
+                    'INSERT INTO class_schedules
+                     (application_id, term_id, day_of_week, start_time, end_time, subject_code)
+                     VALUES (:application_id, :term_id, :day_of_week, :start_time, :end_time, :subject_code)'
+                );
+                foreach (($step3['class_schedules'] ?? []) as $classSchedule) {
+                    $subjectCode = substr(trim((string) ($classSchedule['subjectCode'] ?? '')), 0, 50);
+                    $startMin = (int) ($classSchedule['startMin'] ?? -1);
+                    $endMin = (int) ($classSchedule['endMin'] ?? -1);
+                    if ($startMin < 0 || $endMin <= $startMin) {
+                        continue;
+                    }
+                    foreach (($classSchedule['days'] ?? []) as $day) {
+                        if (!in_array($day, ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'], true)) {
+                            continue;
+                        }
+                        $classScheduleStatement->execute([
+                            'application_id' => $applicationId,
+                            'term_id' => (int) $activeTermId,
+                            'day_of_week' => $day,
+                            'start_time' => sprintf('%02d:%02d:00', intdiv($startMin, 60), $startMin % 60),
+                            'end_time' => sprintf('%02d:%02d:00', intdiv($endMin, 60), $endMin % 60),
+                            'subject_code' => $subjectCode !== '' ? $subjectCode : null,
+                        ]);
+                    }
+                }
             }
 
             if (array_filter($dailyAvailabilityHours, static fn (float $hours): bool => $hours < 2.0) !== []) {
@@ -1499,6 +1534,7 @@ $hasExistingCor = !empty($existingCor['stored_path']) && file_exists($existingCo
             </div>
 
             <form method="POST" action="" novalidate>
+                <input type="hidden" name="class_schedules_json" id="class-schedules-json" value="<?= htmlspecialchars(json_encode((array) ($step3['class_schedules'] ?? []), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT), ENT_QUOTES, 'UTF-8') ?>">
                 <div class="form-fields">
 
                     <!-- Preferred Work Location -->
@@ -1977,6 +2013,10 @@ $hasExistingCor = !empty($existingCor['stored_path']) && file_exists($existingCo
     function applyCorResult(result, filename) {
         corBaseline = {};
         corClassSchedules = result.classSchedules || [];
+        var classSchedulesInput = document.getElementById('class-schedules-json');
+        if (classSchedulesInput) {
+            classSchedulesInput.value = JSON.stringify(corClassSchedules);
+        }
 
         // Display student badge
         var studentText = '';

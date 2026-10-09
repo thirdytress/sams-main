@@ -318,6 +318,60 @@ function sams_send_application_review_email(string $toEmail, string $toName, str
             throw $e2;
         }
 
+        function sams_send_temporary_duty_email(
+            string $toEmail,
+            string $toName,
+            string $status,
+            array $request,
+            string $reviewNote = ''
+        ): void {
+            require_once __DIR__ . '/../vendor/autoload.php';
+
+            $config = sams_mail_config();
+            $approved = $status === 'approved';
+            $subject = $approved
+                ? 'Your temporary duty request was approved'
+                : 'Your temporary duty request was declined';
+            $date = (string) ($request['duty_date'] ?? '');
+            $time = substr((string) ($request['start_time'] ?? ''), 0, 5)
+                . ' - ' . substr((string) ($request['end_time'] ?? ''), 0, 5);
+            $message = 'Hello ' . htmlspecialchars($toName, ENT_QUOTES, 'UTF-8') . ',<br><br>'
+                . ($approved
+                    ? 'Your temporary duty request has been approved. You may clock in using your registered NFC card on the approved date and time.'
+                    : 'Your temporary duty request has been declined. You may not clock in for this temporary duty request.')
+                . '<br><br><strong>Date:</strong> ' . htmlspecialchars($date, ENT_QUOTES, 'UTF-8')
+                . '<br><strong>Time:</strong> ' . htmlspecialchars($time, ENT_QUOTES, 'UTF-8')
+                . '<br><strong>Office:</strong> ' . htmlspecialchars((string) ($request['office_name'] ?? ''), ENT_QUOTES, 'UTF-8');
+            if ($reviewNote !== '') {
+                $message .= '<br><strong>Admin note:</strong> ' . htmlspecialchars($reviewNote, ENT_QUOTES, 'UTF-8');
+            }
+
+            $mailer = new PHPMailer\PHPMailer\PHPMailer(true);
+            $mailer->CharSet = 'UTF-8';
+            $mailer->setFrom($config['from_email'], $config['from_name']);
+            $mailer->addAddress($toEmail, $toName);
+            sams_configure_mailer($mailer, $config);
+            $mailer->isHTML(true);
+            $mailer->Subject = $subject;
+            $mailer->Body = sams_build_branded_email(
+                'SAMS Temporary Duty Request',
+                $approved ? 'Temporary Duty Approved' : 'Temporary Duty Declined',
+                $message,
+                $approved ? '#008236' : '#b91c1c',
+                $approved ? 'Open SAMS' : null,
+                $approved ? 'http://localhost/samss-main/students/temporary_duty_request.php' : null,
+                true
+            );
+            $mailer->AltBody = strip_tags(str_replace('<br>', "\n", $message));
+
+            try {
+                $mailer->send();
+            } catch (Throwable $exception) {
+                error_log('[sams] Temporary duty mailer failed: ' . $exception->getMessage());
+                throw $exception;
+            }
+        }
+
     }
 }
 
