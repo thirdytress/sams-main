@@ -23,7 +23,7 @@ $notificationId = (int) ($_POST['notification_id'] ?? 0);
 $type = trim((string) ($_POST['type'] ?? ''));
 $markAll = !empty($_POST['mark_all']);
 
-if (!$markAll && ($type !== 'announcement' || $notificationId <= 0)) {
+if (!$markAll && (!in_array($type, ['announcement', 'duty_excuse'], true) || $notificationId <= 0)) {
     http_response_code(400);
     echo json_encode(['success' => false, 'message' => 'invalid payload']);
     exit;
@@ -42,6 +42,21 @@ try {
             ON DUPLICATE KEY UPDATE read_at = NOW()
         ');
         $stmt->execute(['uid' => $userId]);
+
+        // Mark all duty excuses for this supervisor's office as read
+        $offStmt = $pdo->prepare('SELECT office_name FROM supervisors WHERE user_id = :user_id LIMIT 1');
+        $offStmt->execute(['user_id' => $userId]);
+        $supervisorOffice = trim((string) ($offStmt->fetchColumn() ?: ($user['office_name'] ?? '')));
+        if ($supervisorOffice !== '') {
+            $pdo->prepare('
+                INSERT IGNORE INTO duty_excuse_reads (excuse_id, user_id, read_at)
+                SELECT de.excuse_id, :uid, NOW()
+                FROM duty_excuses de
+                LEFT JOIN applications a ON a.application_id = de.application_id
+                WHERE COALESCE(NULLIF(TRIM(de.office_name), ""), NULLIF(TRIM(a.preferred_office), "")) = :office
+            ')->execute(['uid' => $userId, 'office' => $supervisorOffice]);
+        }
+
         echo json_encode(['success' => true]);
         exit;
     }
@@ -53,6 +68,16 @@ try {
              ON DUPLICATE KEY UPDATE read_at = VALUES(read_at)'
         );
         $ins->execute(['aid' => $notificationId, 'uid' => $userId]);
+        echo json_encode(['success' => true]);
+        exit;
+    }
+
+    if ($type === 'duty_excuse' && $notificationId > 0) {
+        $ins = $pdo->prepare(
+            'INSERT IGNORE INTO duty_excuse_reads (excuse_id, user_id, read_at)
+             VALUES (:excuse_id, :uid, NOW())'
+        );
+        $ins->execute(['excuse_id' => $notificationId, 'uid' => $userId]);
         echo json_encode(['success' => true]);
         exit;
     }

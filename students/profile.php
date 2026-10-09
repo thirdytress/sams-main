@@ -1204,6 +1204,17 @@ $dashboardTitle = $studentName !== '' ? $studentName . ' | Profile' : 'My Profil
                     </a>
                 </li>
                 <li class="nav__item">
+                    <a href="duty_excuse.php" class="nav__link">
+                        <span class="nav__icon" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M9 12h6M9 16h4M7 3h10a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z" stroke="#101828" stroke-width="1.8" stroke-linecap="round" fill="#ffffff"/>
+                                <path d="M9 7h2" stroke="#101828" stroke-width="1.8" stroke-linecap="round"/>
+                            </svg>
+                        </span>
+                        <span class="nav__label">Duty Excuse</span>
+                    </a>
+                </li>
+                <li class="nav__item">
                     <a href="attendance_history.php" class="nav__link">
                         <span class="nav__icon" aria-hidden="true">
                             <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">

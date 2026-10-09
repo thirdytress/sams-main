@@ -156,7 +156,9 @@ function sams_attendance_normalize_student_logs(PDO $pdo, int $applicationId, ?i
         $scheduledStart = isset($log['scheduled_start']) ? trim((string) $log['scheduled_start']) : '';
         $timeIn = isset($log['time_in']) ? trim((string) $log['time_in']) : '';
 
-        if ($timeIn !== '' && $scheduledStart !== '') {
+        if (strtolower(trim((string) ($log['status'] ?? ''))) === 'excused') {
+            $log['status'] = 'excused';
+        } elseif ($timeIn !== '' && $scheduledStart !== '') {
             $startTs = strtotime($scheduledStart);
             $inTs = strtotime($timeIn);
             if ($startTs && $inTs && $inTs > $startTs) {
@@ -245,6 +247,21 @@ function sams_attendance_normalize_student_logs(PDO $pdo, int $applicationId, ?i
         ];
         $today = new DateTimeImmutable('now');
 
+        $excuseMap = [];
+        try {
+            $excuseStmt = $pdo->prepare(
+                'SELECT duty_date, excuse_type, reason
+                 FROM duty_excuses
+                 WHERE application_id = :application_id'
+            );
+            $excuseStmt->execute(['application_id' => $applicationId]);
+            foreach ($excuseStmt->fetchAll(PDO::FETCH_ASSOC) as $ex) {
+                $excuseMap[(string) $ex['duty_date']] = $ex;
+            }
+        } catch (Throwable $e) {
+            $excuseMap = [];
+        }
+
         foreach ($scheduleRows as $schedule) {
             $dutyId = (int) ($schedule['duty_id'] ?? 0);
             if ($dutyId <= 0) {
@@ -316,6 +333,9 @@ function sams_attendance_normalize_student_logs(PDO $pdo, int $applicationId, ?i
                     continue;
                 }
 
+                $isExcused = isset($excuseMap[$dateStr]);
+                $excuseInfo = $isExcused ? $excuseMap[$dateStr] : null;
+
                 $records[] = [
                     'log_id' => null,
                     'duty_id' => $dutyId,
@@ -323,13 +343,13 @@ function sams_attendance_normalize_student_logs(PDO $pdo, int $applicationId, ?i
                     'start_time' => (string) ($schedule['start_time'] ?? ''),
                     'end_time' => (string) ($schedule['end_time'] ?? ''),
                     'office_name' => (string) ($schedule['office_name'] ?? 'Unassigned'),
-                    'status' => 'absent',
+                    'status' => $isExcused ? 'excused' : 'absent',
                     'time_in' => null,
                     'time_out' => null,
                     'late_minutes' => 0,
-                    'notes' => 'No clock-in by cutoff',
+                    'notes' => $isExcused ? ('Excused: ' . ($excuseInfo['excuse_type'] ?? 'Valid reason')) : 'No clock-in by cutoff',
                     'created_at' => $dateStr . ' 00:00:00',
-                    '__derived_absent' => true,
+                    '__derived_absent' => !$isExcused,
                     '__priority' => 1,
                 ];
 

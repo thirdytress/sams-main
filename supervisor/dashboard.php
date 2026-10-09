@@ -342,6 +342,7 @@ function h(?string $value): string
         <nav class="sidebar__nav" aria-label="Supervisor navigation">
             <a href="dashboard.php" class="sidebar__nav-link sidebar__nav-link--active" aria-current="page">Dashboard</a>
             <a href="attendance.php" class="sidebar__nav-link">Attendance</a>
+            <a href="duty_excuses.php" class="sidebar__nav-link">Duty Excuses</a>
             <a href="evaluation.php" class="sidebar__nav-link">Evaluation</a>
             <a href="reports.php" class="sidebar__nav-link">Reports</a>
             <a href="students.php" class="sidebar__nav-link">Students</a>

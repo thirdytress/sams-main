@@ -53,7 +53,23 @@ try {
         $availabilityCount = 0;
     }
 
-    $count = $reportCount + $meetingCount + $availabilityCount + $applicationCount;
+    $dutyExcuseCount = 0;
+    if ($adminUserId > 0) {
+        try {
+            $excuseCountStmt = $pdo->prepare(
+                'SELECT COUNT(*)
+                 FROM duty_excuses de
+                 LEFT JOIN duty_excuse_reads r ON (r.excuse_id = de.excuse_id AND r.user_id = :admin_user_id)
+                 WHERE r.id IS NULL'
+            );
+            $excuseCountStmt->execute(['admin_user_id' => $adminUserId]);
+            $dutyExcuseCount = (int) $excuseCountStmt->fetchColumn();
+        } catch (Throwable $e) {
+            $dutyExcuseCount = 0;
+        }
+    }
+
+    $count = $reportCount + $meetingCount + $availabilityCount + $applicationCount + $dutyExcuseCount;
     echo json_encode(['success' => true, 'count' => $count]);
 } catch (Throwable $e) {
     echo json_encode(['success' => false, 'message' => 'db error']);

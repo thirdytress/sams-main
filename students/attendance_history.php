@@ -23,6 +23,7 @@ function sams_report_status_label(string $status): string
 		return match ($status) {
 				'present', 'active', 'completed' => 'Present',
 				'late' => 'Late',
+				'excused' => 'Excused',
 				'absent' => 'Absent',
 				'incomplete' => 'Absent',
 				default => ucfirst($status),
@@ -34,6 +35,7 @@ function sams_report_status_class(string $status): string
 		return match ($status) {
 				'present', 'active', 'completed' => 'badge badge--green',
 				'late' => 'badge badge--yellow',
+				'excused' => 'badge badge--yellow',
 				'absent' => 'badge badge--red',
 				'incomplete' => 'badge badge--gray',
 				default => 'badge badge--gray',
@@ -201,6 +203,7 @@ if (!empty($application['term_id'])) {
 $summary = [
 		'active' => 0,
 		'late' => 0,
+		'excused' => 0,
 		'absent' => 0,
 		'incomplete' => 0,
 		'total' => 0,
@@ -218,6 +221,8 @@ if (!empty($application['application_id'])) {
 						$summary['active']++;
 				} elseif ($status === 'late') {
 						$summary['late']++;
+				} elseif ($status === 'excused') {
+						$summary['excused']++;
 				} elseif ($status === 'absent' || $status === 'incomplete') {
 						$summary['absent']++;
 				}
@@ -720,6 +725,13 @@ function h(?string $value): string
 						<path d="M12 4v16M4 12h16" stroke="#101828" stroke-width="1.8" stroke-linecap="round" />
 					</svg>
 					Temporary Duty Request
+				</a>
+				<a href="duty_excuse.php" class="nav-item">
+					<svg class="nav-item__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+						<path d="M9 12h6M9 16h4M7 3h10a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z" stroke="#101828" stroke-width="1.8" stroke-linecap="round" fill="#ffffff" />
+						<path d="M9 7h2" stroke="#101828" stroke-width="1.8" stroke-linecap="round" />
+					</svg>
+					Duty Excuse
 				</a>
 				<a href="attendance_history.php" class="nav-item nav-item--active" aria-current="page">
 					<svg class="nav-item__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">

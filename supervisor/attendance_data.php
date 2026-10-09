@@ -41,11 +41,13 @@ $activeTermId = (int) ($activeTerm['term_id'] ?? 0);
 // Fetch today's attendance rows for supervisor's office using a derived latest-log join (more efficient)
 $stmt = $pdo->query(
     "SELECT u.first_name, u.last_name, s.student_id AS student_code, a.application_id AS application_id, ds.duty_id AS duty_id, COALESCE(NULLIF(TRIM(ds.office_name), ''), NULLIF(TRIM(a.preferred_office), ''), 'Unassigned') AS office_name,
-            al.clock_in_time AS time_in, al.clock_out_time AS time_out, al.status, al.late_minutes, ds.start_time, ds.end_time
+            al.clock_in_time AS time_in, al.clock_out_time AS time_out, al.status, al.late_minutes, ds.start_time, ds.end_time,
+            de.excuse_id, de.excuse_type
      FROM duty_schedules ds
      INNER JOIN applications a ON a.application_id = ds.application_id
      LEFT JOIN students s ON s.student_id = a.student_id
      LEFT JOIN users u ON u.user_id = s.user_id
+     LEFT JOIN duty_excuses de ON (de.application_id = a.application_id AND de.duty_date = CURDATE())
      LEFT JOIN (
          SELECT al1.* FROM attendance_logs al1
          INNER JOIN (
@@ -65,7 +67,7 @@ $today_rows = [];
 foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: [] as $row) {
     $status = sams_attendance_display_status((string) ($row['status'] ?? ''));
     if ($status === '') {
-        $status = 'absent';
+        $status = !empty($row['excuse_id']) ? 'excused' : 'absent';
     }
     $timeIn = sams_attendance_clocking_enabled() ? ($row['time_in'] ?? null) : null;
     $timeOut = sams_attendance_clocking_enabled() ? ($row['time_out'] ?? null) : null;
@@ -88,6 +90,7 @@ foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: [] as $row) {
         'status' => match ($status) {
             'present', 'completed' => 'Present',
             'late' => 'Late',
+            'excused' => 'Excused',
             default => 'Absent',
         },
     ];
@@ -96,20 +99,23 @@ foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: [] as $row) {
 // compute metrics
 $present = 0;
 $late = 0;
+$excused = 0;
 $absent = 0;
 foreach ($today_rows as $r) {
     $s = strtolower((string) ($r['status'] ?? ''));
     if ($s === 'present') $present++;
     elseif ($s === 'late') $late++;
+    elseif ($s === 'excused') $excused++;
     else $absent++;
 }
-$total = $present + $late + $absent;
+$total = $present + $late + $excused + $absent;
 
 echo json_encode([
     'success' => true,
     'metrics' => [
         'present' => $present,
         'late' => $late,
+        'excused' => $excused,
         'absent' => $absent,
         'total' => $total,
     ],

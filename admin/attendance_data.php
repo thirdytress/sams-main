@@ -56,12 +56,14 @@ try {
         'SELECT u.first_name, u.last_name, s.student_id_number AS student_code,
                 COALESCE(NULLIF(TRIM(ds.office_name), ""), NULLIF(TRIM(a.preferred_office), ""), "Unassigned") AS office_name,
                 al.clock_in_time AS time_in, al.clock_out_time AS time_out, al.status, al.late_minutes,
-                ds.start_time, date_range.attendance_date
+                ds.start_time, date_range.attendance_date,
+                de.excuse_id, de.excuse_type
          FROM duty_schedules ds
          INNER JOIN applications a ON a.application_id = ds.application_id
          LEFT JOIN students s ON s.student_id = a.student_id
          LEFT JOIN users u ON u.user_id = s.user_id
          CROSS JOIN (' . implode(' UNION ALL ', $dateQueries) . ') AS date_range
+         LEFT JOIN duty_excuses de ON (de.application_id = ds.application_id AND de.duty_date = date_range.attendance_date)
          LEFT JOIN attendance_logs al ON al.log_id = (
              SELECT al2.log_id
              FROM attendance_logs al2
@@ -92,7 +94,7 @@ try {
     foreach ($attendanceRows as &$attendanceRow) {
         $status = sams_attendance_display_status((string) ($attendanceRow['status'] ?? ''));
         if ($status === '') {
-            $status = 'absent';
+            $status = !empty($attendanceRow['excuse_id']) ? 'excused' : 'absent';
         }
 
         $timeInRaw = !empty($attendanceRow['time_in']) ? (string) $attendanceRow['time_in'] : null;
@@ -100,7 +102,9 @@ try {
         if (!sams_attendance_clocking_enabled()) {
             $timeInRaw = null;
             $timeOutRaw = null;
-            $status = 'absent';
+            if (empty($attendanceRow['excuse_id'])) {
+                $status = 'absent';
+            }
         }
 
         if ($timeInRaw !== null) {
@@ -130,10 +134,11 @@ try {
         $attendanceRow['duration'] = sams_attendance_duration_label($timeInRaw, $timeOutRaw);
         $attendanceRow['time_in'] = $timeInRaw ? date('g:i A', strtotime($timeInRaw)) : '-';
         $attendanceRow['time_out'] = $timeOutRaw ? date('g:i A', strtotime($timeOutRaw)) : ($timeInRaw ? 'In Progress' : '-');
-        $attendanceRow['method'] = $timeInRaw !== null ? 'Live DB' : '-';
+        $attendanceRow['method'] = $timeInRaw !== null ? 'Live DB' : (!empty($attendanceRow['excuse_id']) ? 'Duty Excuse' : '-');
         $attendanceRow['status'] = match ($status) {
             'present', 'completed' => 'Present',
             'late' => 'Late',
+            'excused' => 'Excused',
             'active' => 'In Progress',
             default => 'Absent',
         };

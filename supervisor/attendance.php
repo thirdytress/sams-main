@@ -33,11 +33,13 @@ $todayRows = [];
 if ($supervisorOffice !== '' && $activeTermId > 0) {
     $stmt = $pdo->prepare(
     'SELECT u.first_name, u.last_name, s.student_id AS student_code, a.application_id, ds.duty_id, COALESCE(NULLIF(TRIM(ds.office_name), ""), NULLIF(TRIM(a.preferred_office), ""), "Unassigned") AS office_name,
-                al.clock_in_time AS time_in, al.clock_out_time AS time_out, al.status, al.late_minutes, ds.start_time, ds.end_time
+                al.clock_in_time AS time_in, al.clock_out_time AS time_out, al.status, al.late_minutes, ds.start_time, ds.end_time,
+                de.excuse_id, de.excuse_type
          FROM duty_schedules ds
          INNER JOIN applications a ON a.application_id = ds.application_id
          LEFT JOIN students s ON s.student_id = a.student_id
          LEFT JOIN users u ON u.user_id = s.user_id
+         LEFT JOIN duty_excuses de ON (de.application_id = a.application_id AND de.duty_date = CURDATE())
          LEFT JOIN attendance_logs al ON al.log_id = (
              SELECT al2.log_id
              FROM attendance_logs al2
@@ -63,6 +65,7 @@ if ($supervisorOffice !== '' && $activeTermId > 0) {
 $metrics = [
     'present' => 0,
     'late' => 0,
+    'excused' => 0,
     'absent' => 0,
     'total' => 0,
     'rendered_seconds' => 0,
@@ -72,7 +75,7 @@ $rows = [];
 foreach ($todayRows as $row) {
     $status = sams_attendance_display_status((string) ($row['status'] ?? ''));
     if ($status === '') {
-        $status = 'absent';
+        $status = !empty($row['excuse_id']) ? 'excused' : 'absent';
     }
 
     $timeInRaw = $row['time_in'] ?? null;
@@ -88,6 +91,8 @@ foreach ($todayRows as $row) {
         $metrics['present']++;
     } elseif ($status === 'late') {
         $metrics['late']++;
+    } elseif ($status === 'excused') {
+        $metrics['excused']++;
     } else {
         $metrics['absent']++;
     }
@@ -111,11 +116,13 @@ foreach ($todayRows as $row) {
         'status' => match ($status) {
             'present', 'completed' => 'Present',
             'late' => 'Late',
+            'excused' => 'Excused',
             default => 'Absent',
         },
         'dot' => match ($status) {
             'present', 'completed' => 'green',
             'late' => 'blue',
+            'excused' => 'amber',
             default => 'grey',
         },
     ];
@@ -181,6 +188,7 @@ $pageTitle = 'Attendance Monitoring | Supervisor Portal';
         .legend-chip{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 10px;border-radius:999px;font-size:12px;font-weight:700}
         .legend-chip--present{background:#dcfce7;color:#008236}
         .legend-chip--late{background:#dbeafe;color:#1447e6}
+        .legend-chip--excused{background:#fef3c7;color:#b45309}
         .legend-chip--absent{background:#f3f4f6;color:#4a5565}
         .table-wrap{overflow-x:auto}
         table{width:100%;border-collapse:collapse;min-width:900px}
@@ -190,10 +198,12 @@ $pageTitle = 'Attendance Monitoring | Supervisor Portal';
         .dot{display:inline-block;width:10px;height:10px;border-radius:9999px;margin-right:8px;vertical-align:middle}
         .dot--green{background:#00c950}
         .dot--blue{background:#2b7fff}
+        .dot--amber{background:#f59e0b}
         .dot--grey{background:#d1d5dc}
         .badge{display:inline-flex;align-items:center;height:24px;padding:0 10px;border-radius:9999px;font-size:12px;font-weight:700}
         .badge--present{background:#dcfce7;color:#008236}
         .badge--late{background:#dbeafe;color:#1447e6}
+        .badge--excused{background:#fef3c7;color:#b45309}
         .badge--absent{background:#f3f4f6;color:#4a5565}
         .empty{padding:24px;text-align:center;color:var(--color-body)}
         .toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
@@ -224,6 +234,10 @@ $pageTitle = 'Attendance Monitoring | Supervisor Portal';
             <a href="attendance.php" class="sidebar__nav-link sidebar__nav-link--active" aria-current="page">
                 <svg class="sidebar__nav-icon" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M17 5L8 14.5L3.5 10" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 Attendance
+            </a>
+            <a href="duty_excuses.php" class="sidebar__nav-link">
+                <svg class="sidebar__nav-icon" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M5 3a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2V7.5L12.5 3H5z" stroke="#364153" stroke-width="1.5"/><path d="M12 3v5h5M7 11h6M7 14h4" stroke="#364153" stroke-width="1.5" stroke-linecap="round"/></svg>
+                Duty Excuses
             </a>
             <a href="evaluation.php" class="sidebar__nav-link">
                 <svg class="sidebar__nav-icon" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 2l2 5.5H17l-4 3 1.5 5.5L10 13l-4.5 3L7 11 3 8h5L10 2Z" stroke="#364153" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -311,6 +325,7 @@ $pageTitle = 'Attendance Monitoring | Supervisor Portal';
                     <div class="card__legend">
                         <span class="legend-chip legend-chip--present">Present</span>
                         <span class="legend-chip legend-chip--late">Late</span>
+                        <span class="legend-chip legend-chip--excused">Excused</span>
                         <span class="legend-chip legend-chip--absent">Absent</span>
                     </div>
                 </div>

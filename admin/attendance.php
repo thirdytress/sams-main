@@ -31,6 +31,7 @@ function sams_admin_attendance_dot(string $status): string
     return match ($status) {
         'completed', 'present' => 'green',
         'active', 'late' => 'blue',
+        'excused' => 'amber',
         default => 'grey',
     };
 }
@@ -40,11 +41,13 @@ if ($activeTermId > 0) {
     $todayRowsStmt = $pdo->prepare(
         'SELECT u.first_name, u.last_name, s.student_id AS student_code,
                 COALESCE(NULLIF(TRIM(ds.office_name), ""), NULLIF(TRIM(a.preferred_office), ""), "Unassigned") AS office_name,
-                al.clock_in_time AS time_in, al.clock_out_time AS time_out, al.status, al.late_minutes, ds.start_time
+                al.clock_in_time AS time_in, al.clock_out_time AS time_out, al.status, al.late_minutes, ds.start_time,
+                de.excuse_id, de.excuse_type
          FROM duty_schedules ds
          INNER JOIN applications a ON a.application_id = ds.application_id
          LEFT JOIN students s ON s.student_id = a.student_id
          LEFT JOIN users u ON u.user_id = s.user_id
+         LEFT JOIN duty_excuses de ON (de.application_id = ds.application_id AND de.duty_date = CURDATE())
          LEFT JOIN attendance_logs al ON al.log_id = (
              SELECT al2.log_id
              FROM attendance_logs al2
@@ -76,7 +79,7 @@ $officeSummary = [];
 foreach ($todayRows as $row) {
     $status = sams_attendance_display_status((string) ($row['status'] ?? ''));
     if ($status === '') {
-        $status = 'absent';
+        $status = !empty($row['excuse_id']) ? 'excused' : 'absent';
     }
 
     $timeIn = !empty($row['time_in']) ? (string) $row['time_in'] : null;
@@ -85,7 +88,9 @@ foreach ($todayRows as $row) {
     if (!sams_attendance_clocking_enabled()) {
         $timeIn = null;
         $timeOut = null;
-        $status = 'absent';
+        if (empty($row['excuse_id'])) {
+            $status = 'absent';
+        }
     }
 
     if ($timeIn !== null && $timeOut === null) {
@@ -126,6 +131,7 @@ foreach ($todayRows as $row) {
         'status' => match ($status) {
             'present', 'completed' => 'Present',
             'late' => 'Late',
+            'excused' => 'Excused',
             'active' => 'Active',
             default => 'Absent',
         },
@@ -807,8 +813,10 @@ $currentDateLabel = date('l, F j, Y');
             font-weight: 700;
             white-space: nowrap;
         }
+        .att-dot--amber  { background: #f59e0b; }
         .att-status--completed { background: var(--clr-status-completed-bg); color: var(--clr-status-completed-text); }
         .att-status--active    { background: var(--clr-status-active-bg);    color: var(--clr-status-active-text); }
+        .att-status--excused   { background: #fef3c7; color: #b45309; border: 1px solid #fde68a; }
         .att-status--scheduled { background: var(--clr-status-scheduled-bg); color: var(--clr-status-scheduled-text); }
 
         /* ============================================================
@@ -1201,6 +1209,7 @@ $currentDateLabel = date('l, F j, Y');
                                     $cls = 'att-status--scheduled';
                                     if ($st === 'present' || $st === 'completed') $cls = 'att-status--completed';
                                     elseif ($st === 'late' || $st === 'active' || $st === 'in progress') $cls = 'att-status--active';
+                                    elseif ($st === 'excused') $cls = 'att-status--excused';
                                     ?>
                                     <span class="att-status <?= $cls ?>"><?= htmlspecialchars($row['status']) ?></span>
                                 </td>
@@ -1371,6 +1380,7 @@ $currentDateLabel = date('l, F j, Y');
         st = (st || '').toLowerCase();
         if (st === 'completed' || st === 'present') return 'att-dot--green';
         if (st === 'active' || st === 'late' || st === 'in progress') return 'att-dot--blue';
+        if (st === 'excused') return 'att-dot--amber';
         return 'att-dot--grey';
     }
 
@@ -1386,6 +1396,7 @@ $currentDateLabel = date('l, F j, Y');
         var statusCls = 'att-status--scheduled';
         if ((status || '').toLowerCase() === 'completed') statusCls = 'att-status--completed';
         else if ((status || '').toLowerCase() === 'active' || (status || '').toLowerCase() === 'late' || (status || '').toLowerCase() === 'in progress') statusCls = 'att-status--active';
+        else if ((status || '').toLowerCase() === 'excused') statusCls = 'att-status--excused';
 
         var html = '<tr data-schedule-start="' + escapeHtml(scheduleStart) + '">' +
             '<td><div class="att-name"><span class="att-dot ' + dotCls + '" aria-hidden="true"></span>' + escapeHtml(name) + '</div></td>' +

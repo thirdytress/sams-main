@@ -59,8 +59,37 @@ try {
              WHERE status = 'open' AND is_new = 1"
         );
 
+        // Mark all duty excuses as read for current admin
+        try {
+            $pdo->prepare(
+                'INSERT IGNORE INTO duty_excuse_reads (excuse_id, user_id, read_at)
+                 SELECT excuse_id, :admin_user_id, NOW()
+                 FROM duty_excuses'
+            )->execute(['admin_user_id' => $adminUserId]);
+        } catch (Throwable $e) {
+            // ignore
+        }
+
         echo json_encode(['success' => true]);
         exit;
+    }
+
+    if ($type === 'duty_excuse' && $notificationId > 0) {
+        try {
+            $stmt = $pdo->prepare(
+                'INSERT IGNORE INTO duty_excuse_reads (excuse_id, user_id, read_at)
+                 VALUES (:excuse_id, :admin_user_id, NOW())'
+            );
+            $stmt->execute([
+                'excuse_id' => $notificationId,
+                'admin_user_id' => $adminUserId,
+            ]);
+            echo json_encode(['success' => true]);
+            exit;
+        } catch (Throwable $e) {
+            echo json_encode(['success' => false, 'message' => 'failed to mark read']);
+            exit;
+        }
     }
     if ($type === 'meeting' && $notificationId > 0) {
         $stmt = $pdo->prepare(

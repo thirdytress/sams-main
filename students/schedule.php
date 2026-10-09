@@ -1419,6 +1419,13 @@ if (!empty($studentSchedules)) {
         </svg>
         Temporary Duty Request
       </a>
+      <a class="nav-item" href="duty_excuse.php">
+        <svg class="nav-item__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path d="M9 12h6M9 16h4M7 3h10a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z" stroke="#101828" stroke-width="1.8" stroke-linecap="round" fill="#ffffff" />
+          <path d="M9 7h2" stroke="#101828" stroke-width="1.8" stroke-linecap="round" />
+        </svg>
+        Duty Excuse
+      </a>
       <a class="nav-item" href="attendance_history.php">
         <svg class="nav-item__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
           <path d="M5 4h10l4 4v12H5z" stroke="#101828" stroke-width="1.8" stroke-linejoin="round" fill="#ffffff" />

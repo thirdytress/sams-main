@@ -151,6 +151,42 @@ try {
         ];
     }
 
+    if ($adminUserId > 0) {
+        try {
+            $excuseStmt = $pdo->prepare(
+                "SELECT de.excuse_id, de.duty_date, de.excuse_type, de.reason, de.submitted_at,
+                        COALESCE(NULLIF(TRIM(de.office_name), ''), NULLIF(TRIM(a.preferred_office), ''), 'Assigned Office') AS office_name,
+                        s.student_id_number, u.first_name, u.last_name
+                 FROM duty_excuses de
+                 INNER JOIN students s ON s.student_id = de.student_id
+                 INNER JOIN users u ON u.user_id = s.user_id
+                 LEFT JOIN applications a ON a.application_id = de.application_id
+                 LEFT JOIN duty_excuse_reads r ON (r.excuse_id = de.excuse_id AND r.user_id = :admin_user_id)
+                 WHERE r.id IS NULL
+                 ORDER BY de.submitted_at DESC
+                 LIMIT 8"
+            );
+            $excuseStmt->execute(['admin_user_id' => $adminUserId]);
+            $excuseRows = $excuseStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+            foreach ($excuseRows as $row) {
+                $name = trim((string) ($row['first_name'] ?? '') . ' ' . (string) ($row['last_name'] ?? ''));
+                $dateLabel = date('M d, Y', strtotime((string) $row['duty_date']));
+                $items[] = [
+                    'type' => 'duty_excuse',
+                    'notification_id' => (int) $row['excuse_id'],
+                    'student_code' => (string) ($row['student_id_number'] ?? ''),
+                    'title' => 'Duty Excuse: ' . ($name !== '' ? $name : 'Student'),
+                    'preferred_office' => (string) ($row['office_name'] ?? ''),
+                    'snippet' => 'Excused on ' . $dateLabel . ' (' . (string) $row['excuse_type'] . '): ' . mb_substr((string) $row['reason'], 0, 80),
+                    'created_at' => (string) ($row['submitted_at'] ?? ''),
+                    'link_url' => 'duty_excuses.php',
+                ];
+            }
+        } catch (Throwable $exception) {
+            // ignore
+        }
+    }
+
     usort(
         $items,
         static function (array $a, array $b): int {
