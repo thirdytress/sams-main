@@ -3,66 +3,123 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/config/bootstrap.php';
 
-$submission = $_SESSION['registration_submission'] ?? [];
-$applicationId = (int) ($submission['application_id'] ?? 0);
+$pdo = sams_pdo();
 
-if ($applicationId <= 0) {
-    $currentUser = sams_authenticated_user();
-    if ($currentUser && ($currentUser['role'] ?? '') === 'student') {
-        $statusStatement = sams_pdo()->prepare(
-            'SELECT
-                a.application_id,
-                a.status,
-                COALESCE(a.submitted_at, a.created_at) AS date_submitted,
-                s.student_id_number AS student_number,
-                s.program AS course,
-                s.year_level,
-                u.first_name,
-                u.last_name
-             FROM applications a
-             INNER JOIN students s ON s.student_id = a.student_id
-             INNER JOIN users u ON u.user_id = s.user_id
-             WHERE s.user_id = :user_id
-             ORDER BY a.application_id DESC
-             LIMIT 1'
-        );
-        $statusStatement->execute([
-            'user_id' => (int) ($currentUser['user_id'] ?? 0),
-        ]);
-        $application = $statusStatement->fetch(PDO::FETCH_ASSOC);
+// Fetch dynamic admin / SDAO contact info from the database
+$adminContact = [
+    'name'  => 'SDAO Administrator',
+    'email' => 'sdao@nu-lipa.edu.ph',
+    'phone' => '(043) 723-0706',
+];
 
-        if ($application) {
-            $applicationId = (int) $application['application_id'];
-            $submission = [
-                'application_id' => $applicationId,
-                'student_name' => trim((string) $application['first_name'] . ' ' . (string) $application['last_name']),
-                'student_number' => (string) $application['student_number'],
-                'course' => (string) $application['course'],
-                'year_level' => (string) $application['year_level'],
-                'date_submitted' => (string) $application['date_submitted'],
-                'status' => (string) $application['status'],
-            ];
+try {
+    $adminStmt = $pdo->query(
+        "SELECT first_name, last_name, email, phone_number 
+         FROM users 
+         WHERE role = 'admin' AND is_active = 1 
+         ORDER BY user_id ASC 
+         LIMIT 1"
+    );
+    $adminRow = $adminStmt ? $adminStmt->fetch(PDO::FETCH_ASSOC) : null;
+    if ($adminRow) {
+        $admName = trim((string)($adminRow['first_name'] ?? '') . ' ' . (string)($adminRow['last_name'] ?? ''));
+        if ($admName !== '') {
+            $adminContact['name'] = $admName;
         }
+        if (!empty($adminRow['email'])) {
+            $adminContact['email'] = (string) $adminRow['email'];
+        }
+        if (!empty($adminRow['phone_number'])) {
+            $adminContact['phone'] = (string) $adminRow['phone_number'];
+        }
+    }
+} catch (Throwable $e) {
+    // fallback
+}
+
+$submission = $_SESSION['registration_submission'] ?? [];
+$applicationId = isset($_GET['application_id']) ? (int)$_GET['application_id'] : (isset($_GET['id']) ? (int)$_GET['id'] : 0);
+
+if ($applicationId <= 0 && isset($submission['application_id'])) {
+    $applicationId = (int) $submission['application_id'];
+}
+
+$currentUser = sams_authenticated_user();
+if ($applicationId <= 0 && $currentUser && ($currentUser['role'] ?? '') === 'student') {
+    $statusStatement = $pdo->prepare(
+        'SELECT a.application_id
+         FROM applications a
+         INNER JOIN students s ON s.student_id = a.student_id
+         WHERE s.user_id = :user_id
+         ORDER BY a.application_id DESC
+         LIMIT 1'
+    );
+    $statusStatement->execute(['user_id' => (int) ($currentUser['user_id'] ?? 0)]);
+    $row = $statusStatement->fetch(PDO::FETCH_ASSOC);
+    if ($row) {
+        $applicationId = (int) ($row['application_id'] ?? 0);
+    }
+}
+
+// Fetch live application details if ID is available
+if ($applicationId > 0) {
+    $statusStatement = $pdo->prepare(
+        'SELECT
+            a.application_id,
+            a.status,
+            a.preferred_office,
+            COALESCE(a.submitted_at, a.created_at) AS date_submitted,
+            s.student_id_number AS student_number,
+            s.program AS course,
+            s.year_level,
+            u.first_name,
+            u.last_name
+         FROM applications a
+         INNER JOIN students s ON s.student_id = a.student_id
+         INNER JOIN users u ON u.user_id = s.user_id
+         WHERE a.application_id = :application_id
+         LIMIT 1'
+    );
+    $statusStatement->execute(['application_id' => $applicationId]);
+    $liveApp = $statusStatement->fetch(PDO::FETCH_ASSOC);
+    if ($liveApp) {
+        $submission = [
+            'application_id' => (int) $liveApp['application_id'],
+            'student_name' => trim((string) $liveApp['first_name'] . ' ' . (string) $liveApp['last_name']),
+            'student_number' => (string) $liveApp['student_number'],
+            'course' => (string) $liveApp['course'],
+            'year_level' => (string) $liveApp['year_level'],
+            'date_submitted' => (string) $liveApp['date_submitted'],
+            'status' => (string) $liveApp['status'],
+            'preferred_office' => (string) ($liveApp['preferred_office'] ?? ''),
+        ];
     }
 }
 
 $student_name   = (string) ($submission['student_name'] ?? 'Juan Dela Cruz');
-$student_id     = (string) ($submission['student_number'] ?? '2021-12345');
-$course         = (string) ($submission['course'] ?? 'BSIT');
-$year_level     = (string) ($submission['year_level'] ?? '3rd Year');
+$student_id     = (string) ($submission['student_number'] ?? '2024-12345');
+$course         = (string) ($submission['course'] ?? 'BS Information Technology');
+$year_level     = (string) ($submission['year_level'] ?? '1st Year');
 $date_submitted = (string) ($submission['date_submitted'] ?? date('F j, Y'));
 $status         = strtoupper((string) ($submission['status'] ?? 'PENDING'));
+
 $status_title   = '⏳ Application Under Review';
-$status_sub     = 'Your application is currently being reviewed by Miss Zai. This typically takes 1-3 business days.';
+$status_sub     = "Your application is currently being reviewed by {$adminContact['name']} (SDAO). This typically takes 1-3 business days.";
 $showAvailabilityCta = !empty($submission['success']) && empty($submission['availability_complete']);
 
-if ($status === 'DRAFT') {
+if ($status === 'APPROVED') {
+    $status_title = '🎉 Application Approved!';
+    $status_sub   = "Congratulations! Your application has been approved by {$adminContact['name']}. You can now log in to the Student Assistant portal to view your duty schedule and attendance.";
+} elseif ($status === 'REJECTED') {
+    $status_title = 'Application Status Update';
+    $status_sub   = "Your application has been reviewed and was declined for this term. For further details, please contact {$adminContact['name']} at SDAO.";
+} elseif ($status === 'DRAFT') {
     $status_title = '📝 Application Saved as Draft';
-    $status_sub = (string) ($submission['message'] ?? 'Your application has been saved as a draft. Please complete your weekly time availability to submit your application.');
+    $status_sub   = (string) ($submission['message'] ?? 'Your application has been saved as a draft. Please complete your weekly time availability to submit your application.');
     $showAvailabilityCta = true;
 } elseif (!empty($submission['success'])) {
     $status_title = '✅ Application Submitted Successfully';
-    $status_sub = (string) ($submission['message'] ?? 'Your application has been submitted and is now in the review queue.');
+    $status_sub   = (string) ($submission['message'] ?? 'Your application has been submitted and is now in the review queue.');
 }
 ?>
 <!DOCTYPE html>
@@ -724,44 +781,44 @@ if ($status === 'DRAFT') {
 
                 <!-- Step 2 – Active (Under Review) -->
                 <li class="next-step">
-                    <div class="next-step__icon-wrap next-step__icon-wrap--active" aria-label="In progress">
+                    <div class="next-step__icon-wrap next-step__icon-wrap--<?= $status === 'PENDING' ? 'active' : ($status === 'APPROVED' || $status === 'REJECTED' ? 'done' : 'future') ?>" aria-label="In progress">
                         <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                            <circle cx="12" cy="12" r="9" stroke="#fe9a00" stroke-width="2"/>
-                            <path d="M12 7V12L15 15" stroke="#fe9a00" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            <circle cx="12" cy="12" r="9" stroke="<?= $status === 'APPROVED' || $status === 'REJECTED' ? '#00c950' : '#fe9a00' ?>" stroke-width="2"/>
+                            <path d="M12 7V12L15 15" stroke="<?= $status === 'APPROVED' || $status === 'REJECTED' ? '#00c950' : '#fe9a00' ?>" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                         </svg>
                     </div>
                     <div class="next-step__info">
                         <p class="next-step__title">Step 2: Under Review ⏳</p>
-                        <p class="next-step__desc">Miss Zai is currently reviewing your application and documents. Expected: 1-3 business days.</p>
+                        <p class="next-step__desc" id="step2-desc">SDAO Head (<?= htmlspecialchars($adminContact['name']) ?>) is currently reviewing your application and documents. Expected: 1-3 business days.</p>
                     </div>
                 </li>
 
                 <!-- Step 3 – Future -->
                 <li class="next-step">
-                    <div class="next-step__icon-wrap next-step__icon-wrap--future" aria-label="Pending">
+                    <div class="next-step__icon-wrap next-step__icon-wrap--<?= $status === 'APPROVED' || $status === 'REJECTED' ? 'done' : 'future' ?>" aria-label="Pending">
                         <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                            <circle cx="12" cy="12" r="9" stroke="#d1d5dc" stroke-width="2"/>
-                            <path d="M9 10.5C9 9.12 10.12 8 11.5 8h.5a2 2 0 0 1 1 3.73L12 12.5V14" stroke="#9ca3af" stroke-width="2" stroke-linecap="round"/>
-                            <circle cx="12" cy="16.5" r=".75" fill="#9ca3af"/>
+                            <circle cx="12" cy="12" r="9" stroke="<?= $status === 'APPROVED' || $status === 'REJECTED' ? '#00c950' : '#d1d5dc' ?>" stroke-width="2"/>
+                            <path d="M9 10.5C9 9.12 10.12 8 11.5 8h.5a2 2 0 0 1 1 3.73L12 12.5V14" stroke="<?= $status === 'APPROVED' || $status === 'REJECTED' ? '#00c950' : '#9ca3af' ?>" stroke-width="2" stroke-linecap="round"/>
+                            <circle cx="12" cy="16.5" r=".75" fill="<?= $status === 'APPROVED' || $status === 'REJECTED' ? '#00c950' : '#9ca3af' ?>"/>
                         </svg>
                     </div>
                     <div class="next-step__info">
                         <p class="next-step__title">Step 3: Decision &amp; Notification</p>
-                        <p class="next-step__desc">You'll receive an email notification once your application is approved or if additional information is needed.</p>
+                        <p class="next-step__desc">You'll receive an email notification once your application is reviewed and approved by <?= htmlspecialchars($adminContact['name']) ?>.</p>
                     </div>
                 </li>
 
                 <!-- Step 4 – Future -->
                 <li class="next-step">
-                    <div class="next-step__icon-wrap next-step__icon-wrap--future" aria-label="Pending">
+                    <div class="next-step__icon-wrap next-step__icon-wrap--<?= $status === 'APPROVED' ? 'active' : 'future' ?>" aria-label="Pending">
                         <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                            <rect x="3" y="3" width="18" height="18" rx="3" stroke="#d1d5dc" stroke-width="2"/>
-                            <path d="M8 9H16M8 13H14M8 17H11" stroke="#9ca3af" stroke-width="2" stroke-linecap="round"/>
+                            <rect x="3" y="3" width="18" height="18" rx="3" stroke="<?= $status === 'APPROVED' ? '#003087' : '#d1d5dc' ?>" stroke-width="2"/>
+                            <path d="M8 9H16M8 13H14M8 17H11" stroke="<?= $status === 'APPROVED' ? '#003087' : '#9ca3af' ?>" stroke-width="2" stroke-linecap="round"/>
                         </svg>
                     </div>
                     <div class="next-step__info">
                         <p class="next-step__title">Step 4: Access Dashboard</p>
-                        <p class="next-step__desc">Once approved, you'll gain access to the student dashboard to view schedules and log attendance.</p>
+                        <p class="next-step__desc">Once approved, you can log in to your Student Assistant dashboard using your student credentials to view your duty schedule and tap at the kiosk.</p>
                     </div>
                 </li>
 
@@ -772,7 +829,7 @@ if ($status === 'DRAFT') {
         <section class="help-card" aria-labelledby="help-heading">
             <h2 class="help-card__title" id="help-heading">Need Help?</h2>
             <p class="help-card__sub">
-                If you have questions about your application or need assistance, please contact the SDAO office:
+                If you have questions about your application, requirements, or need assistance, please contact our SDAO Administrator:
             </p>
             <div class="help-card__contacts">
 
@@ -783,8 +840,8 @@ if ($status === 'DRAFT') {
                         <path d="M2 7l10 7 10-7" stroke="#bedbff" stroke-width="1.67" stroke-linecap="round" stroke-linejoin="round"/>
                     </svg>
                     <div>
-                        <span class="help-contact__label">Email</span>
-                        <a href="mailto:sdao@nu-lipa.edu.ph" class="help-contact__value">sdao@nu-lipa.edu.ph</a>
+                        <span class="help-contact__label">Admin Email (<?= htmlspecialchars($adminContact['name']) ?>)</span>
+                        <a href="mailto:<?= htmlspecialchars($adminContact['email']) ?>" class="help-contact__value" id="help-admin-email"><?= htmlspecialchars($adminContact['email']) ?></a>
                     </div>
                 </div>
 
@@ -794,8 +851,8 @@ if ($status === 'DRAFT') {
                         <path d="M5 3h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 12l5 2v4a2 2 0 0 1-2 2A17 17 0 0 1 3 5a2 2 0 0 1 2-2Z" stroke="#bedbff" stroke-width="1.67" stroke-linecap="round" stroke-linejoin="round"/>
                     </svg>
                     <div>
-                        <span class="help-contact__label">Phone</span>
-                        <a href="tel:+6343723 0706" class="help-contact__value">(043) 723-0706</a>
+                        <span class="help-contact__label">Contact Number</span>
+                        <a href="tel:<?= htmlspecialchars(preg_replace('/[^0-9+]/', '', $adminContact['phone'])) ?>" class="help-contact__value" id="help-admin-phone"><?= htmlspecialchars($adminContact['phone']) ?></a>
                     </div>
                 </div>
 
@@ -822,6 +879,8 @@ if ($status === 'DRAFT') {
     var yearEl = document.getElementById('detail-year');
     var dateEl = document.getElementById('detail-datesub');
     var statusBadgeEl = document.getElementById('detail-status-badge');
+    var adminEmailEl = document.getElementById('help-admin-email');
+    var adminPhoneEl = document.getElementById('help-admin-phone');
 
     function safeText(el, value){ if(!el) return; el.textContent = value == null ? '' : value; }
     function setBadge(status){ if(!statusBadgeEl) return; status = (status||'').toUpperCase(); statusBadgeEl.textContent = status || 'PENDING'; statusBadgeEl.className = 'status-badge';
@@ -840,20 +899,31 @@ if ($status === 'DRAFT') {
         btn.setAttribute('aria-busy','true');
         btn.textContent = 'Refreshing…';
 
-        fetch('api/application_status.php', { credentials: 'same-origin', cache: 'no-store' })
+        fetch('api/application_status.php' + window.location.search, { credentials: 'same-origin', cache: 'no-store' })
             .then(function(resp){ if(!resp.ok) throw new Error('network'); return resp.json(); })
             .then(function(data){
-                if(!data || !data.success) { return; }
+                if(!data) { return; }
                 var d = data.item || {};
-                safeText(titleEl, d.title || 'Application Status');
-                safeText(subEl, d.sub || '');
-                safeText(fullnameEl, d.full_name || fullnameEl && fullnameEl.textContent);
-                safeText(studentidEl, d.student_id || studentidEl && studentidEl.textContent);
-                safeText(courseEl, d.course || courseEl && courseEl.textContent);
-                safeText(yearEl, d.year_level || yearEl && yearEl.textContent);
-                safeText(dateEl, d.date_submitted || dateEl && dateEl.textContent);
-                setBadge(d.status || 'PENDING');
+                var admin = data.admin_contact || d.admin_contact || {};
+
+                if (d.title) safeText(titleEl, d.title);
+                if (d.sub) safeText(subEl, d.sub);
+                if (d.full_name) safeText(fullnameEl, d.full_name);
+                if (d.student_id) safeText(studentidEl, d.student_id);
+                if (d.course) safeText(courseEl, d.course);
+                if (d.year_level) safeText(yearEl, d.year_level);
+                if (d.date_submitted) safeText(dateEl, d.date_submitted);
+                if (d.status) setBadge(d.status);
                 toggleContinue(!!d.show_availability);
+
+                if (admin.email && adminEmailEl) {
+                    adminEmailEl.textContent = admin.email;
+                    adminEmailEl.setAttribute('href', 'mailto:' + admin.email);
+                }
+                if (admin.phone && adminPhoneEl) {
+                    adminPhoneEl.textContent = admin.phone;
+                    adminPhoneEl.setAttribute('href', 'tel:' + admin.phone.replace(/[^0-9+]/g, ''));
+                }
             })
             .catch(function(){ /* ignore */ })
             .finally(function(){ btn.disabled = false; btn.removeAttribute('aria-busy'); btn.classList.remove('btn--loading'); btn.textContent = btn.dataset.origText || 'Refresh Status'; });
@@ -861,15 +931,14 @@ if ($status === 'DRAFT') {
 
     if(btn){ btn.addEventListener('click', function(){ fetchStatus(); }); }
 
-    // Poll every 30 seconds
+    // Auto Refresh every 20 seconds for real-time status updates
     try {
-        setInterval(fetchStatus, 30000);
+        setInterval(fetchStatus, 20000);
     } catch (e) { /* ignore */ }
 
     // When user clicks Continue, clear the session payload then navigate
     if (continueBtn) {
         continueBtn.addEventListener('click', function (ev) {
-            // Navigate to availability; keep registration_submission in session so availability has context.
             ev.preventDefault();
             var href = continueBtn.getAttribute('href');
             window.location.href = href;
