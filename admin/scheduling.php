@@ -257,6 +257,14 @@ function generate_schedules(PDO $pdo, int $adminId, bool $hasOfficeColumn, ?stri
     $skipped = 0;
     $errors = [];
 
+    // Lunch break constants (12:00 PM - 1:00 PM)
+    $lunchStartMin = 12 * 60; // 720
+    $lunchEndMin   = 13 * 60; // 780
+
+    // Office hours boundary (weekday: up to 5 PM, Saturday: up to 12 PM)
+    $weekdayEndMin  = 17 * 60; // 1020
+    $saturdayEndMin = 12 * 60; // 720
+
     $sql = "SELECT
             a.application_id AS application_id,
             a.student_id,
@@ -296,8 +304,32 @@ function generate_schedules(PDO $pdo, int $adminId, bool $hasOfficeColumn, ?stri
                  ORDER BY FIELD(day_of_week, 'Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'), start_time ASC"
     );
 
-        $existingStmt = $pdo->prepare(
-                "SELECT COUNT(*)
+    // Prepare statement to fetch class schedules for gap-filling
+    $hasClassScheduleTable = false;
+    try {
+        $classCheckStmt = $pdo->prepare(
+            "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'class_schedules'"
+        );
+        $classCheckStmt->execute();
+        $hasClassScheduleTable = (int) $classCheckStmt->fetchColumn() > 0;
+    } catch (Throwable $exception) {
+        $hasClassScheduleTable = false;
+    }
+
+    $classScheduleStmt = null;
+    if ($hasClassScheduleTable) {
+        $classScheduleStmt = $pdo->prepare(
+            "SELECT start_time, end_time
+             FROM class_schedules
+             WHERE application_id = :application_id
+                 AND term_id = :term_id
+                 AND day_of_week = :day_of_week
+             ORDER BY start_time ASC"
+        );
+    }
+
+    $existingStmt = $pdo->prepare(
+            "SELECT COUNT(*)
                  FROM duty_schedules ds
                  JOIN applications a ON a.application_id = ds.application_id
                  WHERE a.student_id = :student_id
@@ -307,7 +339,7 @@ function generate_schedules(PDO $pdo, int $adminId, bool $hasOfficeColumn, ?stri
                      AND (
                          (ds.start_time < :end_time AND ds.end_time > :start_time)
                      )"
-        );
+    );
 
     if ($hasOfficeColumn) {
         $insertStmt = $pdo->prepare(
@@ -367,64 +399,202 @@ function generate_schedules(PDO $pdo, int $adminId, bool $hasOfficeColumn, ?stri
             continue;
         }
 
+        // Fetch class schedules per day for this student (for gap-filling)
+        $classSchedulesByDay = [];
+        if ($classScheduleStmt !== null) {
+            foreach (['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'] as $dayName) {
+                try {
+                    $classScheduleStmt->execute([
+                        'application_id' => (int) $student['application_id'],
+                        'term_id' => (int) $student['term_id'],
+                        'day_of_week' => $dayName,
+                    ]);
+                    $classSchedulesByDay[$dayName] = $classScheduleStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+                } catch (Throwable $exception) {
+                    $classSchedulesByDay[$dayName] = [];
+                }
+            }
+        }
+
+        // Group availability rows by day so we can process each day holistically
+        $availabilityByDay = [];
         foreach ($availabilityRows as $availability) {
             $day = schedule_day_label((string) $availability['day_of_week']);
+            if ($day !== '') {
+                $availabilityByDay[$day][] = $availability;
+            }
+        }
 
-            if ($day === '') {
+        foreach ($availabilityByDay as $day => $dayAvailabilitySlots) {
+            $isSaturday = ($day === 'Saturday');
+            $dayEndLimit = $isSaturday ? $saturdayEndMin : $weekdayEndMin;
+
+            // Collect class schedule blocks for this day (as minute ranges)
+            $classBlocks = [];
+            foreach (($classSchedulesByDay[$day] ?? []) as $classRow) {
+                $classStart = time_to_minutes((string) $classRow['start_time']);
+                $classEnd   = time_to_minutes((string) $classRow['end_time']);
+                if ($classEnd > $classStart) {
+                    $classBlocks[] = ['start' => $classStart, 'end' => $classEnd];
+                }
+            }
+            // Sort class blocks by start time
+            usort($classBlocks, static fn (array $a, array $b): int => $a['start'] <=> $b['start']);
+
+            // Find the earliest availability start and latest availability end for this day
+            $dayAvailStart = PHP_INT_MAX;
+            $dayAvailEnd = 0;
+            foreach ($dayAvailabilitySlots as $slot) {
+                $slotStart = time_to_minutes((string) $slot['time_start']);
+                $slotEnd   = time_to_minutes((string) $slot['time_end']);
+                if ($slotStart < $dayAvailStart) {
+                    $dayAvailStart = $slotStart;
+                }
+                if ($slotEnd > $dayAvailEnd) {
+                    $dayAvailEnd = $slotEnd;
+                }
+            }
+
+            if ($dayAvailEnd <= $dayAvailStart) {
                 $skipped++;
-                $errors[] = 'Skipped student ID ' . $student['student_id'] . ': invalid availability day.';
                 continue;
             }
 
-            $availableStart = time_to_minutes((string) $availability['time_start']);
-            $availableEnd = time_to_minutes((string) $availability['time_end']);
+            // Determine the effective duty end: extend to the start of the nearest class
+            // that begins AFTER the original availability end, or to the office-hours boundary.
+            // This fills the gap between availability end and next class start.
+            $effectiveDutyEnd = $dayAvailEnd;
 
-            if ($availableEnd <= $availableStart) {
+            if (!empty($classBlocks)) {
+                // Find the first class that starts at or after the original availability end
+                $nextClassStart = null;
+                foreach ($classBlocks as $cb) {
+                    if ($cb['start'] >= $dayAvailEnd) {
+                        $nextClassStart = $cb['start'];
+                        break;
+                    }
+                }
+
+                if ($nextClassStart !== null) {
+                    // Extend duty to fill the gap up to the next class
+                    $effectiveDutyEnd = $nextClassStart;
+                }
+            }
+
+            // Cap at office hours boundary
+            $effectiveDutyEnd = min($effectiveDutyEnd, $dayEndLimit);
+
+            // Build duty blocks from dayAvailStart to effectiveDutyEnd,
+            // excluding class blocks and the lunch break (12:00 PM - 1:00 PM).
+            // First, collect all "blocked" intervals (classes + lunch)
+            $blockedIntervals = [];
+
+            // Add lunch break as a blocked interval (skip for Saturday since it ends at 12 PM)
+            if (!$isSaturday && $lunchStartMin < $effectiveDutyEnd && $lunchEndMin > $dayAvailStart) {
+                $blockedIntervals[] = ['start' => $lunchStartMin, 'end' => $lunchEndMin];
+            }
+
+            // Add class blocks that overlap with our duty range
+            foreach ($classBlocks as $cb) {
+                if ($cb['start'] < $effectiveDutyEnd && $cb['end'] > $dayAvailStart) {
+                    $blockedIntervals[] = $cb;
+                }
+            }
+
+            // Sort blocked intervals by start
+            usort($blockedIntervals, static fn (array $a, array $b): int => $a['start'] <=> $b['start']);
+
+            // Merge overlapping blocked intervals
+            $mergedBlocked = [];
+            foreach ($blockedIntervals as $interval) {
+                if (empty($mergedBlocked)) {
+                    $mergedBlocked[] = $interval;
+                } else {
+                    $last = &$mergedBlocked[count($mergedBlocked) - 1];
+                    if ($interval['start'] <= $last['end']) {
+                        $last['end'] = max($last['end'], $interval['end']);
+                    } else {
+                        $mergedBlocked[] = $interval;
+                    }
+                    unset($last);
+                }
+            }
+
+            // Generate duty blocks: free intervals between dayAvailStart and effectiveDutyEnd
+            $dutyBlocks = [];
+            $cursor = $dayAvailStart;
+
+            foreach ($mergedBlocked as $blocked) {
+                if ($cursor < $blocked['start']) {
+                    $blockEnd = min($blocked['start'], $effectiveDutyEnd);
+                    if ($blockEnd > $cursor) {
+                        $dutyBlocks[] = ['start' => $cursor, 'end' => $blockEnd];
+                    }
+                }
+                $cursor = max($cursor, $blocked['end']);
+            }
+
+            // Remaining time after last blocked interval
+            if ($cursor < $effectiveDutyEnd) {
+                $dutyBlocks[] = ['start' => $cursor, 'end' => $effectiveDutyEnd];
+            }
+
+            // Filter out duty blocks shorter than 30 minutes (too short to be useful)
+            $dutyBlocks = array_filter($dutyBlocks, static fn (array $b): bool => ($b['end'] - $b['start']) >= 30);
+
+            // Check total duty minutes for the day (minimum 2 hours across all blocks)
+            $totalDutyMinutes = 0;
+            foreach ($dutyBlocks as $block) {
+                $totalDutyMinutes += ($block['end'] - $block['start']);
+            }
+
+            if ($totalDutyMinutes < 120) {
                 $skipped++;
+                $errors[] = sprintf('Skipped student %s on %s: total duty window too small (needs 2+ hours, got %d min).', $student['student_id'], $day, $totalDutyMinutes);
                 continue;
             }
 
-            // Enforce 2-hour minimum and maximum 4 hours per day
-            $scheduleStart = $availableStart;
-            $scheduleEnd = min($availableEnd, $scheduleStart + (4 * 60));
+            // Insert each duty block
+            foreach ($dutyBlocks as $block) {
+                $startTime = minutes_to_time($block['start']);
+                $endTime   = minutes_to_time($block['end']);
 
-            $durationMinutes = $scheduleEnd - $scheduleStart;
+                // Check for time conflicts with existing schedules
+                $existingStmt->execute([
+                    'student_id' => (int) $student['student_id'],
+                    'term_id' => (int) $student['term_id'],
+                    'day_of_week' => $day,
+                    'start_time' => $startTime,
+                    'end_time' => $endTime,
+                ]);
 
-            // Skip if less than 2 hours (120 minutes)
-            if ($durationMinutes < 120) {
-                $skipped++;
-                $errors[] = sprintf('Skipped student %s on %s: available window too small (needs 2+ hours).', $student['student_id'], $day);
-                continue;
+                if ((int) $existingStmt->fetchColumn() > 0) {
+                    $skipped++;
+                    $errors[] = sprintf('Skipped student %s on %s (%s-%s): time conflict with existing schedule.', $student['student_id'], $day, display_time($startTime), display_time($endTime));
+                    continue;
+                }
+
+                if ($hasOfficeColumn) {
+                    $insertStmt->execute([
+                        'application_id_insert' => (int) $student['application_id'],
+                        'office_name_insert' => $office,
+                        'term_id_insert' => (int) $student['term_id'],
+                        'day_of_week_insert' => $day,
+                        'start_time_insert' => $startTime,
+                        'end_time_insert' => $endTime,
+                    ]);
+                } else {
+                    $insertStmt->execute([
+                        'application_id_insert' => (int) $student['application_id'],
+                        'term_id_insert' => (int) $student['term_id'],
+                        'day_of_week_insert' => $day,
+                        'start_time_insert' => $startTime,
+                        'end_time_insert' => $endTime,
+                    ]);
+                }
+
+                $created++;
             }
-
-            $startTime = minutes_to_time($scheduleStart);
-            $endTime = minutes_to_time($scheduleEnd);
-
-            // Check for time conflicts with existing schedules (allow multiple schedules per day if no overlap)
-            $existingStmt->execute([
-                'student_id' => (int) $student['student_id'],
-                'term_id' => (int) $student['term_id'],
-                'day_of_week' => $day,
-                'start_time' => $startTime,
-                'end_time' => $endTime,
-            ]);
-
-            if ((int) $existingStmt->fetchColumn() > 0) {
-                $skipped++;
-                $errors[] = sprintf('Skipped student %s on %s: time conflict with existing schedule.', $student['student_id'], $day);
-                continue;
-            }
-
-            $insertStmt->execute([
-                'application_id_insert' => (int) $student['application_id'],
-                'office_name_insert' => $office,
-                'term_id_insert' => (int) $student['term_id'],
-                'day_of_week_insert' => $day,
-                'start_time_insert' => $startTime,
-                'end_time_insert' => $endTime,
-            ]);
-
-            $created++;
         }
     }
 
@@ -1080,6 +1250,54 @@ try {
             $flashMessage = 'Schedule deleted successfully.';
         }
 
+        if ($action === 'regenerate_student_schedules') {
+            $regenStudentId = (int) ($_POST['student_id'] ?? 0);
+            $regenOffice = trim((string) ($_POST['office_filter'] ?? ''));
+            if ($regenStudentId <= 0) {
+                throw new RuntimeException('Invalid student selected for regeneration.');
+            }
+
+            // Find the student's application
+            $regenAppStmt = $pdo->prepare(
+                "SELECT a.application_id, a.term_id, a.preferred_office
+                 FROM applications a
+                 WHERE a.student_id = :student_id AND a.status = 'approved'
+                 ORDER BY a.application_id DESC LIMIT 1"
+            );
+            $regenAppStmt->execute(['student_id' => $regenStudentId]);
+            $regenApp = $regenAppStmt->fetch(PDO::FETCH_ASSOC);
+
+            if (!$regenApp) {
+                throw new RuntimeException('No approved application found for this student.');
+            }
+
+            // Delete all existing duty schedules for this student's application
+            $deleteExistingStmt = $pdo->prepare(
+                "DELETE FROM duty_schedules WHERE application_id = :application_id AND term_id = :term_id"
+            );
+            $deleteExistingStmt->execute([
+                'application_id' => (int) $regenApp['application_id'],
+                'term_id' => (int) $regenApp['term_id'],
+            ]);
+
+            // Regenerate using the improved gap-filling algorithm
+            $result = generate_schedules(
+                $pdo,
+                $adminId,
+                $dutyScheduleHasOfficeColumn,
+                $regenOffice !== '' ? $regenOffice : (string) $regenApp['preferred_office'],
+                $regenStudentId
+            );
+
+            $flashMessage = 'Schedules regenerated successfully. Created ' . $result['created'] . ' schedule(s).';
+            if (!empty($result['errors'])) {
+                $flashError = implode(' ', array_slice($result['errors'], 0, 3));
+            }
+
+            $redirectStudentId = $regenStudentId;
+            $redirectOffice = $regenOffice !== '' ? $regenOffice : (string) $regenApp['preferred_office'];
+        }
+
         $_SESSION['scheduling_flash'] = $flashMessage;
         $_SESSION['scheduling_error'] = $flashError;
 
@@ -1664,6 +1882,12 @@ $hours = range($calendarStartHour, $calendarEndHour); // include last hour (e.g.
                                         <?php else: ?>
                                             <span style="font-size:13px;color:var(--color-muted);">COR not uploaded</span>
                                         <?php endif; ?>
+                                        <form method="POST" style="display:inline;" onsubmit="return confirm('This will delete all existing duty schedules for this student and regenerate them with optimized gap-filling. Continue?');">
+                                            <input type="hidden" name="action" value="regenerate_student_schedules">
+                                            <input type="hidden" name="student_id" value="<?= (int)$selectedStudentId ?>">
+                                            <input type="hidden" name="office_filter" value="<?= h((string)$selectedPreferred['preferred_office']) ?>">
+                                            <button type="submit" class="btn-small" style="background:#fef3c7;color:#92400e;min-width:130px;font-size:15px;box-shadow:0 2px 8px rgba(146,64,14,0.08);" title="Delete existing duty schedules and regenerate with gap-filling optimization">⟳ Regenerate Schedules</button>
+                                        </form>
                                     <?php endif; ?>
                                 </div>
                                 <section class="table-card schedule-table-card">

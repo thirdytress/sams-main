@@ -1194,6 +1194,16 @@ $dashboardTitle = $studentName !== '' ? $studentName . ' | Profile' : 'My Profil
                     </a>
                 </li>
                 <li class="nav__item">
+                    <a href="temporary_duty_request.php" class="nav__link">
+                        <span class="nav__icon" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M12 4v16M4 12h16" stroke="#101828" stroke-width="1.8" stroke-linecap="round"/>
+                            </svg>
+                        </span>
+                        <span class="nav__label">Temporary Duty Request</span>
+                    </a>
+                </li>
+                <li class="nav__item">
                     <a href="attendance_history.php" class="nav__link">
                         <span class="nav__icon" aria-hidden="true">
                             <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
