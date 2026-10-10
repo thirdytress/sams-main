@@ -331,27 +331,10 @@ function h(?string $value): string
 </head>
 <body>
 <div class="shell">
-    <aside class="sidebar">
-        <div class="sidebar__brand">
-            <div class="sidebar__logo"><span class="sidebar__logo-text">NU</span></div>
-            <div>
-                <div class="sidebar__brand-name">SA System</div>
-                <div class="sidebar__brand-sub">Supervisor</div>
-            </div>
-        </div>
-        <nav class="sidebar__nav" aria-label="Supervisor navigation">
-            <a href="dashboard.php" class="sidebar__nav-link sidebar__nav-link--active" aria-current="page">Dashboard</a>
-            <a href="attendance.php" class="sidebar__nav-link">Attendance</a>
-            <a href="duty_excuses.php" class="sidebar__nav-link">Duty Excuses</a>
-            <a href="evaluation.php" class="sidebar__nav-link">Evaluation</a>
-            <a href="reports.php" class="sidebar__nav-link">Reports</a>
-            <a href="students.php" class="sidebar__nav-link">Students</a>
-            <a href="announcements.php" class="sidebar__nav-link">Announcements</a>
-        </nav>
-        <div class="sidebar__footer">
-            <a href="logout.php" class="sidebar__nav-link">Sign Out</a>
-        </div>
-    </aside>
+<?php 
+    $activeSupervisorNav = 'dashboard';
+    require_once __DIR__ . '/_sidebar.php'; 
+?>
 
     <div class="main">
         <header class="topbar">
@@ -359,12 +342,22 @@ function h(?string $value): string
                 <div class="topbar__title">Supervisor Dashboard</div>
                 <div class="topbar__sub"><?php echo h($officeName); ?> · <?php echo h($termLabel); ?></div>
             </div>
-            <div class="topbar__right">
+            <div class="topbar__right" style="display:flex;align-items:center;gap:12px;">
                 <div class="topbar__notif-btn" role="button" aria-label="Notifications" tabindex="0">
                     <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z" fill="#4A5565"/></svg>
                     <span class="topbar__notif-dot" aria-hidden="true" style="display:none"></span>
                 </div>
-                    <a href="profile.php" class="logout-warning"><?php echo h($supervisorName); ?></a>
+                <a href="profile.php" style="display:flex;align-items:center;gap:10px;text-decoration:none;color:#101828;font-weight:700;font-size:14px;" title="My Profile">
+                    <?php $supAv = sams_user_avatar_url($user['profile_image'] ?? null, '../'); ?>
+                    <?php if ($supAv): ?>
+                        <img src="<?php echo h($supAv); ?>?v=<?php echo time(); ?>" alt="" style="width:36px;height:36px;border-radius:50%;object-fit:cover;border:1.5px solid #003087;">
+                    <?php else: ?>
+                        <div style="width:36px;height:36px;border-radius:50%;background:#003087;color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;">
+                            <?php echo h(strtoupper(substr($supervisorName, 0, 1))); ?>
+                        </div>
+                    <?php endif; ?>
+                    <span><?php echo h($supervisorName); ?></span>
+                </a>
                 <a href="logout.php" class="logout-warning">Logout</a>
             </div>
         </header>

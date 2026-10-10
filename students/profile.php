@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../config/bootstrap.php';
+require_once __DIR__ . '/../config/audit.php';
 
 function sams_profile_first_existing_column(PDO $pdo, string $table, array $columns): ?string
 {
@@ -79,6 +80,8 @@ function sams_profile_application_status_label(string $status): string
     };
 }
 
+require_once __DIR__ . '/../config/audit.php';
+
 $currentUser = sams_authenticated_user();
 if (!$currentUser || ($currentUser['role'] ?? null) !== 'student') {
     header('Location: ../login.php');
@@ -86,15 +89,83 @@ if (!$currentUser || ($currentUser['role'] ?? null) !== 'student') {
 }
 
 $pdo = sams_pdo();
+sams_ensure_profile_image_schema($pdo);
+$userId = (int) ($currentUser['user_id'] ?? $currentUser['id'] ?? 0);
+$profileFlashMsg = '';
+$profileFlashError = '';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $isAjax = (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest') || isset($_POST['ajax']);
+
+    if (!sams_verify_csrf((string) ($_POST['_csrf'] ?? ''))) {
+        $profileFlashError = 'Security validation failed. Please refresh and try again.';
+        if ($isAjax) {
+            header('Content-Type: application/json');
+            echo json_encode(['success' => false, 'error' => $profileFlashError]);
+            exit;
+        }
+    } else {
+        $action = (string) ($_POST['action'] ?? 'upload_photo');
+        if ($action === 'remove_photo') {
+            $oldStmt = $pdo->prepare('SELECT profile_image FROM users WHERE user_id = :id');
+            $oldStmt->execute(['id' => $userId]);
+            $oldImg = (string) ($oldStmt->fetchColumn() ?: '');
+            if ($oldImg !== '' && str_starts_with($oldImg, 'uploads/avatars/')) {
+                $oldFile = dirname(__DIR__) . '/' . $oldImg;
+                if (file_exists($oldFile)) {
+                    @unlink($oldFile);
+                }
+            }
+            $pdo->prepare('UPDATE users SET profile_image = NULL WHERE user_id = :id')->execute(['id' => $userId]);
+            $_SESSION['sams_user']['profile_image'] = null;
+            $profileFlashMsg = 'Profile picture removed successfully.';
+            sams_log_audit($pdo, 'DELETE', 'Profile', "Student {$currentUser['name']} removed their profile photo.", [], $userId, 'user');
+            if ($isAjax) {
+                header('Content-Type: application/json');
+                echo json_encode(['success' => true, 'message' => $profileFlashMsg]);
+                exit;
+            }
+        } elseif ($action === 'upload_photo') {
+            if (isset($_FILES['profile_photo'])) {
+                $res = sams_handle_avatar_upload($userId, $_FILES['profile_photo']);
+                if ($res['success']) {
+                    $profileFlashMsg = 'Profile picture updated successfully!';
+                    sams_log_audit($pdo, 'UPDATE', 'Profile', "Student {$currentUser['name']} uploaded a new profile photo.", [], $userId, 'user');
+                    if ($isAjax) {
+                        $newUrl = sams_user_avatar_url($res['path'], '../');
+                        header('Content-Type: application/json');
+                        echo json_encode(['success' => true, 'message' => $profileFlashMsg, 'avatar_url' => $newUrl]);
+                        exit;
+                    }
+                } else {
+                    $profileFlashError = $res['error'];
+                    if ($isAjax) {
+                        header('Content-Type: application/json');
+                        echo json_encode(['success' => false, 'error' => $profileFlashError]);
+                        exit;
+                    }
+                }
+            } else {
+                $profileFlashError = 'No photo file was uploaded.';
+                if ($isAjax) {
+                    header('Content-Type: application/json');
+                    echo json_encode(['success' => false, 'error' => $profileFlashError]);
+                    exit;
+                }
+            }
+        }
+    }
+}
+
 $userPhoneColumn = sams_column_exists($pdo, 'users', 'phone_number') ? 'u.phone_number' : 'NULL AS phone_number';
 $studentStmt = $pdo->prepare(
-    'SELECT s.student_id AS student_db_id, s.student_id_number, s.program, s.year_level, s.current_gpa, s.is_enrolled, s.is_good_standing, s.created_at AS student_created_at, s.nfc_uid, u.user_id AS user_db_id, u.email, u.first_name, u.last_name, ' . $userPhoneColumn . ', NULL AS profile_photo, u.created_at AS user_created_at
+    'SELECT s.student_id AS student_db_id, s.student_id_number, s.program, s.year_level, s.current_gpa, s.is_enrolled, s.is_good_standing, s.created_at AS student_created_at, s.nfc_uid, u.user_id AS user_db_id, u.email, u.first_name, u.last_name, ' . $userPhoneColumn . ', u.profile_image AS profile_photo, u.created_at AS user_created_at
      FROM students s
      INNER JOIN users u ON u.user_id = s.user_id
      WHERE s.user_id = :user_id
      LIMIT 1'
 );
-$studentStmt->execute(['user_id' => (int) ($currentUser['user_id'] ?? $currentUser['id'] ?? 0)]);
+$studentStmt->execute(['user_id' => $userId]);
 $student = $studentStmt->fetch(PDO::FETCH_ASSOC);
 
 if (!$student) {
@@ -689,6 +760,15 @@ $dashboardTitle = $studentName !== '' ? $studentName . ' | Profile' : 'My Profil
             justify-content: center;
             flex-shrink: 0;
             margin-bottom: 16px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .avatar-card__avatar img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
         }
 
         .avatar-card__avatar svg { width: 64px; height: 64px; }
@@ -1155,108 +1235,11 @@ $dashboardTitle = $studentName !== '' ? $studentName . ' | Profile' : 'My Profil
 <div class="app">
 
  
-    <aside class="sidebar" id="sidebar" role="navigation" aria-label="Student portal navigation">
-
-        <div class="sidebar__header">
-            <div class="sidebar__brand">
-                <div class="sidebar__logo" aria-hidden="true">
-                    <span class="sidebar__logo-text">NU</span>
-                </div>
-                <div class="sidebar__brand-info">
-                    <span class="sidebar__app-name">SAMS</span>
-                    <span class="sidebar__app-sub">Student Assistant Management</span>
-                </div>
-            </div>
-        </div>
-
-        <nav class="sidebar__nav" aria-label="Main menu">
-            <ul class="nav__list">
-                <li class="nav__item">
-                    <a href="dashboard.php" class="nav__link">
-                        <span class="nav__icon" aria-hidden="true">
-                            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                <path d="M3 11.5L12 4l9 7.5" stroke="#101828" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="#ffffff"/>
-                                <path d="M5 10.5V20h5v-5h4v5h5v-9.5" stroke="#101828" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="#ffffff"/>
-                            </svg>
-                        </span>
-                        <span class="nav__label">Dashboard</span>
-                    </a>
-                </li>
-                <li class="nav__item">
-                    <a href="schedule.php" class="nav__link">
-                        <span class="nav__icon" aria-hidden="true">
-                            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                <rect x="4" y="5" width="16" height="15" rx="2" stroke="#101828" stroke-width="1.8" fill="#ffffff"/>
-                                <path d="M8 3v4M16 3v4M4 9h16" stroke="#101828" stroke-width="1.8" stroke-linecap="round" fill="none"/>
-                            </svg>
-                        </span>
-                        <span class="nav__label">My Schedule</span>
-                    </a>
-                </li>
-                <li class="nav__item">
-                    <a href="temporary_duty_request.php" class="nav__link">
-                        <span class="nav__icon" aria-hidden="true">
-                            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                <path d="M12 4v16M4 12h16" stroke="#101828" stroke-width="1.8" stroke-linecap="round"/>
-                            </svg>
-                        </span>
-                        <span class="nav__label">Temporary Duty Request</span>
-                    </a>
-                </li>
-                <li class="nav__item">
-                    <a href="duty_excuse.php" class="nav__link">
-                        <span class="nav__icon" aria-hidden="true">
-                            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                <path d="M9 12h6M9 16h4M7 3h10a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z" stroke="#101828" stroke-width="1.8" stroke-linecap="round" fill="#ffffff"/>
-                                <path d="M9 7h2" stroke="#101828" stroke-width="1.8" stroke-linecap="round"/>
-                            </svg>
-                        </span>
-                        <span class="nav__label">Duty Excuse</span>
-                    </a>
-                </li>
-                <li class="nav__item">
-                    <a href="attendance_history.php" class="nav__link">
-                        <span class="nav__icon" aria-hidden="true">
-                            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                <path d="M5 4h10l4 4v12H5z" stroke="#101828" stroke-width="1.8" stroke-linejoin="round" fill="#ffffff"/>
-                                <path d="M15 4v4h4" stroke="#101828" stroke-width="1.8" stroke-linejoin="round" fill="#ffffff"/>
-                                <path d="M8 11h8M8 15h8" stroke="#101828" stroke-width="1.8" stroke-linecap="round" fill="none"/>
-                            </svg>
-                        </span>
-                        <span class="nav__label">Duty-Hour Report</span>
-                    </a>
-                </li>
-                <li class="nav__item">
-                    <a href="profile.php" class="nav__link nav__link--active" aria-current="page">
-                        <span class="nav__icon" aria-hidden="true">
-                            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                <circle cx="12" cy="8" r="3.2" stroke="#101828" stroke-width="1.8" fill="#ffffff"/>
-                                <path d="M6.5 19c1.4-3.1 4-4.8 5.5-4.8S15.6 15.9 17 19" stroke="#101828" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="#ffffff"/>
-                            </svg>
-                        </span>
-                        <span class="nav__label">Profile</span>
-                    </a>
-                </li>
-            </ul>
-        </nav>
-
-        <div class="sidebar__footer">
-            <div class="sidebar__user-card">
-                <span class="sidebar__user-label">Logged in as</span>
-                <span class="sidebar__user-name"><?php echo htmlspecialchars($studentName, ENT_QUOTES, 'UTF-8'); ?></span>
-                <span class="sidebar__user-id">Student ID: <?php echo htmlspecialchars($studentCode, ENT_QUOTES, 'UTF-8'); ?></span>
-            </div>
-            <button class="sidebar__logout" type="button" onclick="window.location.href='logout.php'">
-                <span class="sidebar__logout-icon" aria-hidden="true">
-                    <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M7 3H4a1 1 0 00-1 1v12a1 1 0 001 1h3" stroke="rgba(255,255,255,0.85)" stroke-width="1.5" stroke-linecap="round"/>
-                        <path d="M13 14l3-4-3-4M16 10H7" stroke="rgba(255,255,255,0.85)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
-                </span>
-                <span class="sidebar__logout-label">Logout</span>
-            </button>
-        </div>
-    </aside>
+<?php 
+  $activeStudentNav = 'profile';
+  $studentAvatarUrl = $avatarUrl ?? null;
+  require_once __DIR__ . '/_sidebar.php'; 
+?>
 
     <!-- ================================================================
          MAIN
@@ -1298,6 +1281,17 @@ $dashboardTitle = $studentName !== '' ? $studentName . ' | Profile' : 'My Profil
         <!-- Page Content -->
         <section class="page-content" aria-label="My Profile">
 
+            <?php if ($profileFlashMsg !== ''): ?>
+                <div style="background:#ecfdf3;color:#027a48;border:1px solid #abebd2;border-radius:10px;padding:14px 18px;margin-bottom:20px;font-weight:700;font-size:14px;">
+                    ✅ <?php echo htmlspecialchars($profileFlashMsg, ENT_QUOTES, 'UTF-8'); ?>
+                </div>
+            <?php endif; ?>
+            <?php if ($profileFlashError !== ''): ?>
+                <div style="background:#fef2f2;color:#991b1b;border:1px solid #fecaca;border-radius:10px;padding:14px 18px;margin-bottom:20px;font-weight:700;font-size:14px;">
+                    ⚠️ <?php echo htmlspecialchars($profileFlashError, ENT_QUOTES, 'UTF-8'); ?>
+                </div>
+            <?php endif; ?>
+
             <!-- Page Header -->
             <div class="page-header">
                 <h1 class="page-header__title">My Profile</h1>
@@ -1310,13 +1304,45 @@ $dashboardTitle = $studentName !== '' ? $studentName . ' | Profile' : 'My Profil
                 <!-- ── LEFT: Avatar Card ── -->
                 <div class="avatar-card" role="region" aria-label="Profile overview">
 
-                    <!-- Avatar -->
-                    <div class="avatar-card__avatar" aria-label="Profile avatar">
-                        <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <circle cx="32" cy="22" r="14" fill="rgba(255,255,255,0.85)"/>
-                            <path d="M6 58c0-14.359 11.640-26 26-26s26 11.641 26 26" fill="rgba(255,255,255,0.85)"/>
-                        </svg>
-                    </div>
+                    <!-- Avatar Uploader -->
+                    <?php $studentAvatarUrl = sams_user_avatar_url($student['profile_photo'] ?? null, '../'); ?>
+                    
+                    <form method="post" enctype="multipart/form-data" id="student-avatar-form" style="display:flex;flex-direction:column;align-items:center;width:100%;">
+                        <?= sams_csrf_input_field() ?>
+                        <input type="hidden" name="action" id="avatar-form-action" value="upload_photo">
+                        
+                        <div style="position:relative;margin-bottom:12px;">
+                            <div class="avatar-card__avatar" id="student-avatar-preview" aria-label="Profile avatar">
+                                <?php if ($studentAvatarUrl): ?>
+                                    <img src="<?php echo htmlspecialchars($studentAvatarUrl, ENT_QUOTES, 'UTF-8'); ?>?v=<?php echo time(); ?>" alt="<?php echo htmlspecialchars($studentName, ENT_QUOTES, 'UTF-8'); ?>" style="width:100%;height:100%;object-fit:cover;display:block;">
+                                <?php else: ?>
+                                    <span style="font-size:38px;font-weight:900;color:#ffffff;"><?php echo htmlspecialchars(strtoupper(substr($student['first_name'] ?? 'S', 0, 1) . substr($student['last_name'] ?? 'A', 0, 1)), ENT_QUOTES, 'UTF-8'); ?></span>
+                                <?php endif; ?>
+                            </div>
+                            <label for="student_profile_photo" style="position:absolute;bottom:14px;right:4px;width:38px;height:38px;border-radius:50%;background:#003087;color:#ffffff;border:2.5px solid #ffffff;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.3);transition:transform .2s;" title="Choose Profile Picture">
+                                <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+                                    <circle cx="12" cy="13" r="4"></circle>
+                                </svg>
+                            </label>
+                            <input type="file" id="student_profile_photo" name="profile_photo" accept="image/png, image/jpeg, image/webp, image/gif" style="display:none;" onchange="onStudentAvatarSelected(this);">
+                        </div>
+                        
+                        <!-- Save & Cancel Buttons after selecting photo -->
+                        <div id="avatar-save-actions" style="display:none;flex-direction:row;align-items:center;gap:8px;margin-bottom:12px;">
+                            <button type="submit" id="btn-save-avatar" style="background:#003087;color:#ffffff;border:0;padding:7px 16px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,0.15);display:inline-flex;align-items:center;gap:6px;">
+                                <svg viewBox="0 0 20 20" width="14" height="14" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
+                                Save Photo
+                            </button>
+                            <button type="button" onclick="cancelStudentAvatar();" style="background:#f3f4f6;color:#374151;border:1px solid #d1d5db;padding:7px 12px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;">
+                                Cancel
+                            </button>
+                        </div>
+                        
+                        <?php if ($studentAvatarUrl): ?>
+                            <button type="button" id="btn-remove-avatar" onclick="removeStudentAvatar();" style="background:#fee2e2;color:#991b1b;border:0;padding:5px 14px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;margin-bottom:12px;">Remove Photo</button>
+                        <?php endif; ?>
+                    </form>
 
                     <!-- Name & ID -->
                     <h2 class="avatar-card__name"><?php echo htmlspecialchars($studentName, ENT_QUOTES, 'UTF-8'); ?></h2>
@@ -1612,21 +1638,68 @@ $dashboardTitle = $studentName !== '' ? $studentName . ' | Profile' : 'My Profil
 
     if (overlay) overlay.addEventListener('click', closeSidebar);
 
-    document.addEventListener('keydown', function (e) {
-        if (e.key === 'Escape' && sidebar.classList.contains('sidebar--open')) {
-            closeSidebar();
-            hamburger && hamburger.focus();
-        }
-    });
-
-    // Handle Page Auto-Reload
-    var reloadTimer = window.setInterval(function () {
-        window.location.reload();
-    }, 30000);
-
-
-
 })();
+
+var originalAvatarHTML = null;
+
+function onStudentAvatarSelected(input) {
+    if (!input.files || !input.files[0]) {
+        return;
+    }
+    var file = input.files[0];
+    if (file.size > 5 * 1024 * 1024) {
+        alert('The selected image exceeds the 5MB size limit. Please choose a smaller image.');
+        input.value = '';
+        return;
+    }
+
+    var previewContainer = document.getElementById('student-avatar-preview');
+    if (previewContainer && originalAvatarHTML === null) {
+        originalAvatarHTML = previewContainer.innerHTML;
+    }
+
+    var reader = new FileReader();
+    reader.onload = function(e) {
+        if (previewContainer) {
+            previewContainer.innerHTML = '<img src="' + e.target.result + '" alt="Avatar Preview" style="width:100%;height:100%;object-fit:cover;display:block;">';
+        }
+        var saveActions = document.getElementById('avatar-save-actions');
+        if (saveActions) {
+            saveActions.style.display = 'flex';
+        }
+        var removeBtn = document.getElementById('btn-remove-avatar');
+        if (removeBtn) {
+            removeBtn.style.display = 'none';
+        }
+    };
+    reader.readAsDataURL(file);
+}
+
+function cancelStudentAvatar() {
+    var input = document.getElementById('student_profile_photo');
+    if (input) {
+        input.value = '';
+    }
+    var previewContainer = document.getElementById('student-avatar-preview');
+    if (previewContainer && originalAvatarHTML !== null) {
+        previewContainer.innerHTML = originalAvatarHTML;
+    }
+    var saveActions = document.getElementById('avatar-save-actions');
+    if (saveActions) {
+        saveActions.style.display = 'none';
+    }
+    var removeBtn = document.getElementById('btn-remove-avatar');
+    if (removeBtn) {
+        removeBtn.style.display = 'inline-block';
+    }
+}
+
+function removeStudentAvatar() {
+    if (confirm('Are you sure you want to remove your profile photo?')) {
+        document.getElementById('avatar-form-action').value = 'remove_photo';
+        document.getElementById('student-avatar-form').submit();
+    }
+}
 </script>
 <script src="../assets/js/student-notifications.js?v=20260922"></script>
 

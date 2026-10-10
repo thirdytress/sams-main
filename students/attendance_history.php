@@ -696,69 +696,10 @@ function h(?string $value): string
 </head>
 <body>
 	<div class="layout">
-		<aside class="sidebar">
-			<div class="sidebar__brand">
-				<div class="sidebar__logo">NU</div>
-				<div>
-					<div class="sidebar__brand-name">SAMS</div>
-					<div class="sidebar__brand-sub">Student Assistant Management</div>
-				</div>
-			</div>
-
-			<nav class="sidebar__nav" aria-label="Student navigation">
-				<a href="dashboard.php" class="nav-item">
-					<svg class="nav-item__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-						<path d="M3 11.5L12 4l9 7.5" stroke="#101828" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="#ffffff" />
-						<path d="M5 10.5V20h5v-5h4v5h5v-9.5" stroke="#101828" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="#ffffff" />
-					</svg>
-					Dashboard
-				</a>
-				<a href="schedule.php" class="nav-item">
-					<svg class="nav-item__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-						<rect x="4" y="5" width="16" height="15" rx="2" stroke="#101828" stroke-width="1.8" fill="#ffffff" />
-						<path d="M8 3v4M16 3v4M4 9h16" stroke="#101828" stroke-width="1.8" stroke-linecap="round" fill="none" />
-					</svg>
-					My Schedule
-				</a>
-				<a href="temporary_duty_request.php" class="nav-item">
-					<svg class="nav-item__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-						<path d="M12 4v16M4 12h16" stroke="#101828" stroke-width="1.8" stroke-linecap="round" />
-					</svg>
-					Temporary Duty Request
-				</a>
-				<a href="duty_excuse.php" class="nav-item">
-					<svg class="nav-item__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-						<path d="M9 12h6M9 16h4M7 3h10a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z" stroke="#101828" stroke-width="1.8" stroke-linecap="round" fill="#ffffff" />
-						<path d="M9 7h2" stroke="#101828" stroke-width="1.8" stroke-linecap="round" />
-					</svg>
-					Duty Excuse
-				</a>
-				<a href="attendance_history.php" class="nav-item nav-item--active" aria-current="page">
-					<svg class="nav-item__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-						<path d="M5 4h10l4 4v12H5z" stroke="#101828" stroke-width="1.8" stroke-linejoin="round" fill="#ffffff" />
-						<path d="M15 4v4h4" stroke="#101828" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="#ffffff" />
-						<path d="M8 11h8M8 15h8" stroke="#101828" stroke-width="1.8" stroke-linecap="round" fill="none" />
-					</svg>
-					Duty-Hour Report
-				</a>
-				<a href="profile.php" class="nav-item">
-					<svg class="nav-item__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-						<circle cx="12" cy="8" r="3.2" stroke="#101828" stroke-width="1.8" fill="#ffffff" />
-						<path d="M6.5 19c1.4-3.1 4-4.8 5.5-4.8S15.6 15.9 17 19" stroke="#101828" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="#ffffff" />
-					</svg>
-					Profile
-				</a>
-			</nav>
-
-			<div class="sidebar__footer">
-				<div class="sidebar__user">
-					<span class="sidebar__user-label">Logged in as</span>
-					<span class="sidebar__user-name"><?php echo htmlspecialchars($studentName, ENT_QUOTES, 'UTF-8'); ?></span>
-					<span class="sidebar__user-id">Student ID: <?php echo htmlspecialchars($studentCode, ENT_QUOTES, 'UTF-8'); ?></span>
-				</div>
-				<button class="sidebar__logout" type="button" onclick="window.location.href='logout.php'">Logout</button>
-			</div>
-		</aside>
+<?php 
+  $activeStudentNav = 'attendance_history';
+  require_once __DIR__ . '/_sidebar.php'; 
+?>
 
 		<main class="main">
 			<div class="content">

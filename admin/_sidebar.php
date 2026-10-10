@@ -5,8 +5,8 @@ $pendingApplications = (int) ($pendingApplications ?? 0);
 if (!function_exists('sams_admin_sidebar_icon')) {
     function sams_admin_sidebar_icon(string $key, bool $active): string
     {
-        $stroke = $active ? 'white' : '#364153';
-        $fill = $active ? 'white' : '#364153';
+        $stroke = $active ? '#ffffff' : '#364153';
+        $fill = $active ? '#ffffff' : '#364153';
 
         return match ($key) {
             'dashboard' => '<svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="2" width="7" height="7" rx="1.5" fill="' . $fill . '"/><rect x="11" y="2" width="7" height="7" rx="1.5" fill="' . $fill . '"/><rect x="2" y="11" width="7" height="7" rx="1.5" fill="' . $fill . '"/><rect x="11" y="11" width="7" height="7" rx="1.5" fill="' . $fill . '"/></svg>',
@@ -32,26 +32,36 @@ if (!function_exists('sams_admin_sidebar_icon')) {
     }
 }
 
-$mainNavItems = [
-    ['key' => 'dashboard', 'href' => 'dashboard.php', 'label' => 'Dashboard'],
-    ['key' => 'applications', 'href' => 'applications.php', 'label' => 'Applications'],
-    ['key' => 'scheduling', 'href' => 'scheduling.php', 'label' => 'Scheduling'],
-    ['key' => 'temporary_duty', 'href' => 'temporary_duty_requests.php', 'label' => 'Temporary Duty Requests'],
-    ['key' => 'duty_excuses', 'href' => 'duty_excuses.php', 'label' => 'Duty Excuses'],
-    ['key' => 'attendance', 'href' => 'attendance.php', 'label' => 'Attendance'],
-    ['key' => 'nfc_kiosk', 'href' => 'nfc_kiosk.php', 'label' => 'NFC Kiosk'],
-    ['key' => 'evaluation', 'href' => 'evaluation.php', 'label' => 'Evaluation'],
-    ['key' => 'reports', 'href' => 'reports.php', 'label' => 'Reports'],
-    ['key' => 'announcements', 'href' => 'announcements.php', 'label' => 'Announcements'],
-    ['key' => 'supervisors', 'href' => 'supervisors.php', 'label' => 'Supervisors'],
-    ['key' => 'meetings', 'href' => 'meetings.php', 'label' => 'Meetings'],
-    ['key' => 'students', 'href' => 'students.php', 'label' => 'Students'],
-    ['key' => 'shuffle_requests', 'href' => 'shuffle_requests.php', 'label' => 'Shuffle Requests'],
-    ['key' => 'audit_logs', 'href' => 'audit_logs.php', 'label' => 'Audit Logs'],
+$adminSidebarSections = [
+    'MAIN' => [
+        ['key' => 'dashboard', 'href' => 'dashboard.php', 'label' => 'Dashboard'],
+    ],
+    'APPLICATIONS & SCHEDULING' => [
+        ['key' => 'applications', 'href' => 'applications.php', 'label' => 'Applications', 'badge' => $pendingApplications],
+        ['key' => 'scheduling', 'href' => 'scheduling.php', 'label' => 'Scheduling'],
+        ['key' => 'temporary_duty', 'href' => 'temporary_duty_requests.php', 'label' => 'Temporary Duty'],
+        ['key' => 'shuffle_requests', 'href' => 'shuffle_requests.php', 'label' => 'Shuffle Requests'],
+        ['key' => 'duty_excuses', 'href' => 'duty_excuses.php', 'label' => 'Duty Excuses'],
+    ],
+    'MONITORING & DUTY' => [
+        ['key' => 'attendance', 'href' => 'attendance.php', 'label' => 'Attendance Tracking'],
+        ['key' => 'nfc_kiosk', 'href' => 'nfc_kiosk.php', 'label' => 'NFC Kiosk Mode'],
+        ['key' => 'evaluation', 'href' => 'evaluation.php', 'label' => 'Performance Evaluation'],
+    ],
+    'USER MANAGEMENT & COMMS' => [
+        ['key' => 'supervisors', 'href' => 'supervisors.php', 'label' => 'Supervisors'],
+        ['key' => 'students', 'href' => 'students.php', 'label' => 'Students'],
+        ['key' => 'meetings', 'href' => 'meetings.php', 'label' => 'Meetings'],
+        ['key' => 'announcements', 'href' => 'announcements.php', 'label' => 'Announcements'],
+    ],
+    'SYSTEM & AUDIT' => [
+        ['key' => 'reports', 'href' => 'reports.php', 'label' => 'Accomplishment Reports'],
+        ['key' => 'audit_logs', 'href' => 'audit_logs.php', 'label' => 'System Audit Logs'],
+    ],
 ];
 
 $footerNavItems = [
-    ['key' => 'profile', 'href' => 'profile.php', 'label' => 'Profile'],
+    ['key' => 'profile', 'href' => 'profile.php', 'label' => 'My Profile'],
     ['key' => 'logout', 'href' => 'logout.php', 'label' => 'Sign Out'],
 ];
 ?>
@@ -113,37 +123,148 @@ $footerNavItems = [
         font-family: 'Inter', Arial, sans-serif !important;
     }
 
-    .sidebar .nav__link {
-        font-size: 14px !important;
-        font-weight: 500 !important;
-        line-height: 1.2 !important;
-        text-decoration: none !important;
+    .sidebar {
+        width: 260px;
+        min-height: 100vh;
+        background: #ffffff;
+        border-right: 1px solid #e5e7eb;
+        display: flex;
+        flex-direction: column;
+        flex-shrink: 0;
+        position: sticky;
+        top: 0;
+        height: 100vh;
+        overflow-y: auto;
     }
 
-    .sidebar .nav__label {
-        font-size: 14px !important;
-        font-weight: 500 !important;
-        line-height: 1.2 !important;
+    .sidebar__nav {
+        flex: 1;
+        overflow-y: auto;
+        padding: 16px 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+    }
+
+    .sidebar__section {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
     }
 
     .sidebar .sidebar__section-label {
         font-size: 11px !important;
         font-weight: 800 !important;
         line-height: 1.2 !important;
-        letter-spacing: .10em !important;
+        letter-spacing: .08em !important;
         text-transform: uppercase !important;
+        color: #94a3b8 !important;
+        padding: 0 12px 6px !important;
+        margin: 0 !important;
+    }
+
+    .sidebar .nav__list {
+        list-style: none;
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        margin: 0;
+        padding: 0;
+    }
+
+    .sidebar .nav__item {
+        margin: 0;
+        padding: 0;
+    }
+
+    .sidebar .nav__link {
+        font-size: 13.5px !important;
+        font-weight: 600 !important;
+        line-height: 1.3 !important;
+        text-decoration: none !important;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        min-height: 42px;
+        padding: 8px 12px;
+        border-radius: 9px;
+        color: #334155;
+        transition: all 0.16s ease;
+        border: 1px solid transparent;
+    }
+
+    .sidebar .nav__link:hover {
+        background: #f1f5f9;
+        color: #0f172a;
+        transform: translateX(2px);
+    }
+
+    .sidebar .nav__link--active {
+        background: linear-gradient(135deg, #155dfc 0%, #1447e6 100%) !important;
+        color: #ffffff !important;
+        box-shadow: 0 6px 14px rgba(21, 93, 252, 0.22);
+        font-weight: 700 !important;
+    }
+
+    .sidebar .nav__link--active:hover {
+        transform: none;
+        opacity: 0.96;
+    }
+
+    .sidebar .nav__label {
+        font-size: 13.5px !important;
+        font-weight: 600 !important;
+        line-height: 1.3 !important;
+        flex: 1;
+        min-width: 0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .sidebar .nav__link--active .nav__label {
+        color: #ffffff !important;
+    }
+
+    .sidebar .nav__badge {
+        margin-left: auto;
+        padding: 2px 7px;
+        border-radius: 999px;
+        background: #ef4444;
+        color: #ffffff;
+        font-size: 11px;
+        font-weight: 800;
+        line-height: 1.2;
+        box-shadow: 0 2px 4px rgba(239, 68, 68, 0.3);
+    }
+
+    .sidebar .nav__link--active .nav__badge {
+        background: #ffffff;
+        color: #ef4444;
     }
 
     .sidebar .sidebar__app-name {
-        font-size: 16px !important;
-        font-weight: 700 !important;
+        font-size: 15px !important;
+        font-weight: 800 !important;
         line-height: 1.2 !important;
+        color: #0f172a;
     }
 
     .sidebar .sidebar__app-sub {
         font-size: 12px !important;
-        font-weight: 400 !important;
-        line-height: 1.2 !important;
+        font-weight: 600 !important;
+        line-height: 1.3 !important;
+        color: #64748b;
+    }
+
+    .sidebar__footer {
+        border-top: 1px solid #f1f5f9;
+        padding: 14px 12px;
+        background: #fafafa;
+        flex-shrink: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
     }
 </style>
 <aside class="sidebar" id="sidebar" aria-label="Admin navigation">
@@ -159,29 +280,42 @@ $footerNavItems = [
         </div>
     </div>
 
-    <nav class="sidebar__nav" aria-label="Main menu">
-        <div class="sidebar__section-label">Main menu</div>
-        <ul class="nav__list">
-            <?php foreach ($mainNavItems as $item): ?>
-                <?php $isActive = $activeAdminNav === $item['key']; ?>
-                <li class="nav__item">
-                    <a href="<?= htmlspecialchars($item['href'], ENT_QUOTES, 'UTF-8') ?>" class="nav__link<?= $isActive ? ' nav__link--active' : '' ?>"<?= $isActive ? ' aria-current="page"' : '' ?>>
-                        <span class="nav__icon" aria-hidden="true"><?= sams_admin_sidebar_icon($item['key'], $isActive) ?></span>
-                        <span class="nav__label"><?= htmlspecialchars($item['label'], ENT_QUOTES, 'UTF-8') ?></span>
-                        <?php if ($item['key'] === 'applications' && $pendingApplications > 0): ?><span class="nav__badge" aria-label="<?= (int) $pendingApplications ?> pending"><?= (int) $pendingApplications ?></span><?php endif; ?>
-                    </a>
-                </li>
-            <?php endforeach; ?>
-        </ul>
+    <nav class="sidebar__nav" aria-label="Admin primary navigation">
+        <?php foreach ($adminSidebarSections as $sectionLabel => $items): ?>
+            <div class="sidebar__section">
+                <div class="sidebar__section-label"><?= htmlspecialchars($sectionLabel, ENT_QUOTES, 'UTF-8') ?></div>
+                <ul class="nav__list">
+                    <?php foreach ($items as $item): ?>
+                        <?php 
+                            $isActive = ($activeAdminNav === $item['key']); 
+                            $badge = (int) ($item['badge'] ?? 0);
+                        ?>
+                        <li class="nav__item">
+                            <a href="<?= htmlspecialchars($item['href'], ENT_QUOTES, 'UTF-8') ?>" 
+                               class="nav__link<?= $isActive ? ' nav__link--active' : '' ?>"
+                               <?= $isActive ? ' aria-current="page"' : '' ?>>
+                                <span class="nav__icon" aria-hidden="true"><?= sams_admin_sidebar_icon($item['key'], $isActive) ?></span>
+                                <span class="nav__label"><?= htmlspecialchars($item['label'], ENT_QUOTES, 'UTF-8') ?></span>
+                                <?php if ($badge > 0): ?>
+                                    <span class="nav__badge" aria-label="<?= $badge ?> pending"><?= $badge ?></span>
+                                <?php endif; ?>
+                            </a>
+                        </li>
+                    <?php endforeach; ?>
+                </ul>
+            </div>
+        <?php endforeach; ?>
     </nav>
 
     <div class="sidebar__footer">
-        <div class="sidebar__section-label">Account</div>
+        <div class="sidebar__section-label">ACCOUNT</div>
         <ul class="nav__list">
             <?php foreach ($footerNavItems as $item): ?>
-                <?php $isActive = $activeAdminNav === $item['key']; ?>
+                <?php $isActive = ($activeAdminNav === $item['key']); ?>
                 <li class="nav__item">
-                    <a href="<?= htmlspecialchars($item['href'], ENT_QUOTES, 'UTF-8') ?>" class="nav__link<?= $isActive ? ' nav__link--active' : '' ?>"<?= $isActive ? ' aria-current="page"' : '' ?>>
+                    <a href="<?= htmlspecialchars($item['href'], ENT_QUOTES, 'UTF-8') ?>" 
+                       class="nav__link<?= $isActive ? ' nav__link--active' : '' ?>"
+                       <?= $isActive ? ' aria-current="page"' : '' ?>>
                         <span class="nav__icon" aria-hidden="true"><?= sams_admin_sidebar_icon($item['key'], $isActive) ?></span>
                         <span class="nav__label"><?= htmlspecialchars($item['label'], ENT_QUOTES, 'UTF-8') ?></span>
                     </a>

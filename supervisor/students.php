@@ -90,6 +90,7 @@ $sql =
         COALESCE(s.reshuffle_count, 0) AS reshuffle_count,
         COALESCE(u.first_name, "") AS first_name,
         COALESCE(u.last_name, "") AS last_name,
+        u.profile_image,
         COALESCE(NULLIF(TRIM(a.preferred_office), ""), NULLIF(TRIM(ds.office_name), ""), "Unassigned") AS office_name,
         COUNT(DISTINCT ds.duty_id) AS deployed_schedule_count,
         COALESCE((
@@ -118,7 +119,7 @@ $sql =
      INNER JOIN students s ON s.student_id = a.student_id
      INNER JOIN users u ON u.user_id = s.user_id
      WHERE ' . implode(' AND ', $where) . '
-     GROUP BY a.application_id, s.student_id, s.student_id_number, s.program, s.year_level, s.reshuffle_count, u.first_name, u.last_name, office_name
+     GROUP BY a.application_id, s.student_id, s.student_id_number, s.program, s.year_level, s.reshuffle_count, u.first_name, u.last_name, u.profile_image, office_name
      ORDER BY u.last_name ASC, u.first_name ASC';
 
 if ($activeTermId > 0) {
@@ -220,47 +221,10 @@ function h(?string $value): string
 </head>
 <body>
 <div class="shell">
-    <aside class="sidebar">
-        <div class="sidebar__brand">
-            <div class="sidebar__logo"><span>NU</span></div>
-            <div>
-                <div class="sidebar__brand-name">SA System</div>
-                <div class="sidebar__brand-sub">Supervisor</div>
-            </div>
-        </div>
-        <nav class="sidebar__nav">
-            <a href="dashboard.php" class="sidebar__nav-link">
-                <svg class="sidebar__nav-icon" viewBox="0 0 20 20" fill="none"><path d="M2.5 7.5L10 2.5L17.5 7.5V17.5H12.5V12.5H7.5V17.5H2.5V7.5Z" stroke="#364153" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                Dashboard
-            </a>
-            <a href="attendance.php" class="sidebar__nav-link">
-                <svg class="sidebar__nav-icon" viewBox="0 0 20 20" fill="none"><path d="M17 5L8 14.5L3.5 10" stroke="#364153" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                Attendance
-            </a>
-            <a href="evaluation.php" class="sidebar__nav-link">
-                <svg class="sidebar__nav-icon" viewBox="0 0 20 20" fill="none"><path d="M10 2l2 5.5H17l-4 3 1.5 5.5L10 13l-4.5 3L7 11 3 8h5L10 2Z" stroke="#364153" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                Evaluation
-            </a>
-            <a href="duty_excuses.php" class="sidebar__nav-link">
-                <svg class="sidebar__nav-icon" viewBox="0 0 20 20" fill="none"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" stroke="#364153" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                Duty Excuses
-            </a>
-            <a href="reports.php" class="sidebar__nav-link">
-                <svg class="sidebar__nav-icon" viewBox="0 0 20 20" fill="none"><rect x="2.5" y="2.5" width="15" height="15" rx="2" stroke="#364153" stroke-width="1.5"/><path d="M6 14V10M10 14V7M14 14V11" stroke="#364153" stroke-width="1.5" stroke-linecap="round"/></svg>
-                Reports
-            </a>
-            <a href="students.php" class="sidebar__nav-link sidebar__nav-link--active">
-                <svg class="sidebar__nav-icon" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="6.5" r="3" stroke="white" stroke-width="1.5"/><path d="M3.5 17c0-3.5 2.9-6 6.5-6s6.5 2.5 6.5 6" stroke="white" stroke-width="1.5" stroke-linecap="round"/></svg>
-                Students
-            </a>
-        </nav>
-        <div class="sidebar__footer">
-            <a href="logout.php" class="sidebar__nav-link">
-                <svg class="sidebar__nav-icon" viewBox="0 0 20 20" fill="none"><path d="M13 15l5-5-5-5M18 10H8" stroke="#364153" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 17.5H3.5a.5.5 0 0 1-.5-.5V3a.5.5 0 0 1 .5-.5H8" stroke="#364153" stroke-width="1.5" stroke-linecap="round"/></svg>
-                Sign Out
-            </a>
-        </div>
-    </aside>
+<?php 
+    $activeSupervisorNav = 'students';
+    require_once __DIR__ . '/_sidebar.php'; 
+?>
 
     <div class="main">
         <header class="topbar">
@@ -268,12 +232,22 @@ function h(?string $value): string
                 <div class="topbar__title">Assigned Student Assistants</div>
                 <div class="topbar__sub"><?php echo h($supervisorOffice); ?> • <?php echo h($termLabel); ?></div>
             </div>
-            <div class="topbar__right">
+            <div class="topbar__right" style="display:flex;align-items:center;gap:12px;">
                 <div class="topbar__notif" aria-label="Notifications">
                     <svg class="topbar__icon" viewBox="0 0 20 20" fill="none"><path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z" fill="#364153"/></svg>
                     <span class="topbar__notif-dot" style="display:none"></span>
                 </div>
-                <a href="profile.php" class="btn btn--sec"><?php echo h($supervisorName); ?></a>
+                <a href="profile.php" style="display:flex;align-items:center;gap:10px;text-decoration:none;color:#101828;font-weight:700;font-size:14px;" title="My Profile">
+                    <?php $supAv = sams_user_avatar_url($user['profile_image'] ?? null, '../'); ?>
+                    <?php if ($supAv): ?>
+                        <img src="<?php echo h($supAv); ?>?v=<?php echo time(); ?>" alt="" style="width:36px;height:36px;border-radius:50%;object-fit:cover;border:1.5px solid #003087;">
+                    <?php else: ?>
+                        <div style="width:36px;height:36px;border-radius:50%;background:#003087;color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;">
+                            <?php echo h(strtoupper(substr($supervisorName, 0, 1))); ?>
+                        </div>
+                    <?php endif; ?>
+                    <span><?php echo h($supervisorName); ?></span>
+                </a>
             </div>
         </header>
 
@@ -327,8 +301,20 @@ function h(?string $value): string
                                 ?>
                                 <tr>
                                     <td>
-                                        <strong><?php echo h($fullName !== '' ? $fullName : 'Student Assistant'); ?></strong>
-                                        <div style="font-size:12px;color:var(--text-muted);"><?php echo h((string) ($studentRow['year_level'] ?? '')); ?></div>
+                                        <div style="display:flex;align-items:center;gap:10px;">
+                                            <?php $supAv = sams_user_avatar_url($studentRow['profile_image'] ?? null, '../'); ?>
+                                            <div style="width:36px;height:36px;border-radius:50%;background:#003087;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex-shrink:0;overflow:hidden;border:1.5px solid #e5e7eb;">
+                                                <?php if ($supAv): ?>
+                                                    <img src="<?php echo h($supAv); ?>" alt="" style="width:100%;height:100%;object-fit:cover;">
+                                                <?php else: ?>
+                                                    <?php echo h(strtoupper(substr($studentRow['first_name'] ?? 'S', 0, 1) . substr($studentRow['last_name'] ?? 'A', 0, 1))); ?>
+                                                <?php endif; ?>
+                                            </div>
+                                            <div>
+                                                <strong><?php echo h($fullName !== '' ? $fullName : 'Student Assistant'); ?></strong>
+                                                <div style="font-size:12px;color:var(--text-muted);"><?php echo h((string) ($studentRow['year_level'] ?? '')); ?></div>
+                                            </div>
+                                        </div>
                                     </td>
                                     <td><code><?php echo h((string) ($studentRow['student_id_number'] ?? '')); ?></code></td>
                                     <td><?php echo h((string) ($studentRow['program'] ?? '-')); ?></td>

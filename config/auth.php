@@ -41,6 +41,26 @@ function sams_normalize_name(?string $firstName, ?string $lastName): string
     return $fullName !== '' ? $fullName : 'SAMS User';
 }
 
+function sams_ensure_profile_image_schema(PDO $pdo): void
+{
+    static $ensured = false;
+    if ($ensured) {
+        return;
+    }
+    if (!sams_column_exists($pdo, 'users', 'profile_image')) {
+        try {
+            $pdo->exec("ALTER TABLE users ADD COLUMN profile_image VARCHAR(255) DEFAULT NULL AFTER phone_number");
+        } catch (Throwable $e) {
+            // ignore if already exists
+        }
+    }
+    $targetDir = dirname(__DIR__) . '/uploads/avatars';
+    if (!is_dir($targetDir)) {
+        @mkdir($targetDir, 0777, true);
+    }
+    $ensured = true;
+}
+
 function sams_authenticated_user(): ?array
 {
     if (session_status() !== PHP_SESSION_ACTIVE) {
@@ -53,8 +73,11 @@ function sams_authenticated_user(): ?array
     }
 
     try {
-        $statement = sams_pdo()->prepare(
-            'SELECT user_id, email, role, first_name, last_name, is_active
+        $pdo = sams_pdo();
+        sams_ensure_profile_image_schema($pdo);
+
+        $statement = $pdo->prepare(
+            'SELECT user_id, email, role, first_name, last_name, profile_image, is_active
              FROM users WHERE user_id = :user_id LIMIT 1'
         );
         $statement->execute(['user_id' => (int) $sessionUser['user_id']]);
@@ -71,12 +94,109 @@ function sams_authenticated_user(): ?array
             'first_name' => (string) ($databaseUser['first_name'] ?? ''),
             'last_name' => (string) ($databaseUser['last_name'] ?? ''),
             'name' => sams_normalize_name($databaseUser['first_name'] ?? null, $databaseUser['last_name'] ?? null),
+            'profile_image' => $databaseUser['profile_image'] ?? null,
         ]);
     } catch (Throwable $exception) {
         // Keep the session identity available if the profile refresh is temporarily unavailable.
     }
 
     return $_SESSION['sams_user'];
+}
+
+function sams_handle_avatar_upload(int $userId, array $fileInfo): array
+{
+    if ($userId <= 0) {
+        return ['success' => false, 'error' => 'Invalid user ID.'];
+    }
+
+    if (!isset($fileInfo['error']) || is_array($fileInfo['error'])) {
+        return ['success' => false, 'error' => 'Invalid upload parameters.'];
+    }
+
+    if ($fileInfo['error'] !== UPLOAD_ERR_OK) {
+        return match ($fileInfo['error']) {
+            UPLOAD_ERR_INI_SIZE, UPLOAD_ERR_FORM_SIZE => ['success' => false, 'error' => 'Image is too large (maximum 5MB).'],
+            UPLOAD_ERR_NO_FILE => ['success' => false, 'error' => 'No image file was selected.'],
+            default => ['success' => false, 'error' => 'File upload error occurred (code ' . $fileInfo['error'] . ').'],
+        };
+    }
+
+    if (($fileInfo['size'] ?? 0) > 5 * 1024 * 1024) {
+        return ['success' => false, 'error' => 'Image must not exceed 5MB.'];
+    }
+
+    $tmpPath = (string) ($fileInfo['tmp_name'] ?? '');
+    if (!is_uploaded_file($tmpPath)) {
+        return ['success' => false, 'error' => 'Uploaded file verification failed.'];
+    }
+
+    $finfo = new finfo(FILEINFO_MIME_TYPE);
+    $mime = $finfo->file($tmpPath);
+    $allowedMimes = [
+        'image/jpeg' => 'jpg',
+        'image/jpg'  => 'jpg',
+        'image/png'  => 'png',
+        'image/webp' => 'webp',
+        'image/gif'  => 'gif',
+    ];
+
+    if (!isset($allowedMimes[$mime])) {
+        return ['success' => false, 'error' => 'Invalid image format. Allowed formats: JPG, PNG, WEBP, GIF.'];
+    }
+
+    $ext = $allowedMimes[$mime];
+    $rootDir = dirname(__DIR__);
+    $targetDir = $rootDir . '/uploads/avatars';
+    if (!is_dir($targetDir)) {
+        @mkdir($targetDir, 0777, true);
+    }
+
+    $pdo = sams_pdo();
+    sams_ensure_profile_image_schema($pdo);
+
+    // Fetch existing avatar to delete if it exists
+    $oldStmt = $pdo->prepare('SELECT profile_image FROM users WHERE user_id = :id');
+    $oldStmt->execute(['id' => $userId]);
+    $oldImg = (string) ($oldStmt->fetchColumn() ?: '');
+
+    $newFilename = sprintf('avatar_%d_%s_%s.%s', $userId, date('YmdHis'), bin2hex(random_bytes(4)), $ext);
+    $destPath = $targetDir . '/' . $newFilename;
+    $dbPath = 'uploads/avatars/' . $newFilename;
+
+    if (!move_uploaded_file($tmpPath, $destPath)) {
+        return ['success' => false, 'error' => 'Failed to save uploaded image.'];
+    }
+
+    // Delete old avatar file
+    if ($oldImg !== '' && str_starts_with($oldImg, 'uploads/avatars/')) {
+        $oldFile = $rootDir . '/' . $oldImg;
+        if (file_exists($oldFile) && is_file($oldFile)) {
+            @unlink($oldFile);
+        }
+    }
+
+    // Update database
+    $upd = $pdo->prepare('UPDATE users SET profile_image = :img WHERE user_id = :id');
+    $upd->execute(['img' => $dbPath, 'id' => $userId]);
+
+    if (isset($_SESSION['sams_user']['user_id']) && (int)$_SESSION['sams_user']['user_id'] === $userId) {
+        $_SESSION['sams_user']['profile_image'] = $dbPath;
+    }
+
+    return ['success' => true, 'path' => $dbPath];
+}
+
+function sams_user_avatar_url(?string $profileImage, string $prefix = ''): ?string
+{
+    if ($profileImage === null || trim($profileImage) === '') {
+        return null;
+    }
+    $clean = ltrim(trim($profileImage), '/');
+    $rootDir = dirname(__DIR__);
+    if (file_exists($rootDir . '/' . $clean)) {
+        return $prefix . $clean;
+    }
+    return null;
 }
 
 function sams_login(array $user): void
@@ -94,6 +214,7 @@ function sams_login(array $user): void
         'name' => sams_normalize_name($user['first_name'] ?? null, $user['last_name'] ?? null),
         'student_id' => $user['student_id'] ?? null,
         'office_name' => $user['office_name'] ?? null,
+        'profile_image' => $user['profile_image'] ?? null,
         'must_change_password' => (int) ($user['must_change_password'] ?? 0),
         'application_status' => $user['application_status'] ?? null,
     ];
@@ -141,6 +262,7 @@ function sams_authenticate(string $identifier, string $password): array
                 u.role,
                 u.first_name,
                 u.last_name,
+                u.profile_image,
                 u.is_active,
                 u.{$passwordColumn} AS password_stored,
                 {$mustChangePasswordSelect},

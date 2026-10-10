@@ -1021,10 +1021,15 @@ function sams_admin_dashboard_attendance_dot(string $status): string
                     <div class="topbar__user-name"><?= htmlspecialchars($admin_name) ?></div>
                     <div class="topbar__user-role"><?= htmlspecialchars($admin_role) ?></div>
                 </div>
-                <div class="topbar__avatar" aria-hidden="true">
-                    <svg viewBox="0 0 20 20" fill="none">
-                        <path d="M10 10a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7ZM17.5 17.5c0-4.14-3.36-7.5-7.5-7.5S2.5 13.36 2.5 17.5" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
-                    </svg>
+                <div class="topbar__avatar" aria-hidden="true" style="overflow:hidden;">
+                    <?php $adminAvatar = sams_user_avatar_url($currentUser['profile_image'] ?? null, '../'); ?>
+                    <?php if ($adminAvatar): ?>
+                        <img src="<?= htmlspecialchars($adminAvatar) ?>" alt="<?= htmlspecialchars($admin_name) ?>" style="width:100%;height:100%;object-fit:cover;display:block;">
+                    <?php else: ?>
+                        <svg viewBox="0 0 20 20" fill="none">
+                            <path d="M10 10a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7ZM17.5 17.5c0-4.14-3.36-7.5-7.5-7.5S2.5 13.36 2.5 17.5" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+                        </svg>
+                    <?php endif; ?>
                 </div>
             </div>
         </header>

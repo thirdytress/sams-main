@@ -40,7 +40,8 @@ $studentStmt = $pdo->prepare(
         s.year_level,
         u.first_name,
         u.last_name,
-        u.email
+        u.email,
+        u.profile_image
      FROM applications a
      INNER JOIN students s ON s.student_id = a.student_id
      INNER JOIN users u ON u.user_id = s.user_id
@@ -277,12 +278,22 @@ $studentName = trim((string) ($student['first_name'] ?? '') . ' ' . (string) ($s
 <body>
 <div class="wrap">
     <div class="card">
-        <div class="flex-between flex-row">
-            <div>
-                <div class="title"><?php echo h($studentName); ?></div>
-                <div class="sub">Student ID: <?php echo h((string) ($student['student_id_number'] ?? '')); ?> · Program: <?php echo h((string) ($student['program'] ?? '-')); ?> · Office: <?php echo h($resolvedOfficeLabel); ?></div>
+        <div class="flex-between flex-row" style="align-items:center;gap:16px;">
+            <div style="display:flex;align-items:center;gap:16px;">
+                <?php $studentAvatarUrl = sams_user_avatar_url($student['profile_image'] ?? null, '../'); ?>
+                <?php if ($studentAvatarUrl): ?>
+                    <img src="<?php echo h($studentAvatarUrl); ?>" alt="<?php echo h($studentName); ?>" style="width:58px;height:58px;border-radius:50%;object-fit:cover;border:2px solid #e2e8f0;flex-shrink:0;">
+                <?php else: ?>
+                    <div style="width:58px;height:58px;border-radius:50%;background:linear-gradient(135deg, #003087, #155dfc);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:20px;flex-shrink:0;">
+                        <?php echo h(sams_admin_dashboard_initials((string)($student['first_name'] ?? ''), (string)($student['last_name'] ?? ''))); ?>
+                    </div>
+                <?php endif; ?>
+                <div>
+                    <div class="title"><?php echo h($studentName); ?></div>
+                    <div class="sub">Student ID: <?php echo h((string) ($student['student_id_number'] ?? '')); ?> · Program: <?php echo h((string) ($student['program'] ?? '-')); ?> · Office: <?php echo h($resolvedOfficeLabel); ?></div>
+                </div>
             </div>
-            <div class="flex-row">
+            <div class="flex-row" style="gap:8px;">
                 <span class="live-pill">Live</span>
                 <a class="btn" href="students.php">Back to Students</a>
                 <a class="btn" href="reports.php">Open Reports</a>

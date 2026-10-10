@@ -10,6 +10,13 @@ if (!$currentUser || ($currentUser['role'] ?? null) !== 'student') {
 
 $pdo = sams_pdo();
 
+// Student details
+$studentName = trim((string) ($currentUser['name'] ?? 'Student Assistant'));
+$studentCode = '';
+$studentStmt = $pdo->prepare('SELECT student_id_number FROM students WHERE user_id = :user_id LIMIT 1');
+$studentStmt->execute(['user_id' => (int) ($currentUser['user_id'] ?? $currentUser['id'] ?? 0)]);
+$studentCode = (string) ($studentStmt->fetchColumn() ?: '');
+
 // Fetch recent announcements for students
 $stmt = $pdo->prepare(
   'SELECT a.id, a.title, a.body, a.created_at, 
@@ -34,80 +41,65 @@ function escape($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="../assets/css/sams-shell.css" />
   <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      background: var(--grad-page, #f8fafc);
-      padding: 32px 20px;
+      background: #f8fafc;
       color: var(--color-body, #334155);
+      font-family: 'Inter', sans-serif;
       min-height: 100vh;
     }
-    .announcements-container {
-      max-width: 860px;
-      margin: 0 auto;
+    .app-shell {
+      display: flex;
+      min-height: 100vh;
     }
+    .main-viewport {
+      flex: 1;
+      min-width: 0;
+      padding: 32px 28px;
+    }
+    .announcements-container {
+      max-width: 920px;
+    }
+    .hero-banner {
+      background: linear-gradient(135deg, #003087 0%, #155dfc 100%);
+      color: #fff;
+      border-radius: 18px;
+      padding: 24px 28px;
+      margin-bottom: 24px;
+      box-shadow: 0 10px 25px rgba(0, 48, 135, 0.15);
+    }
+    .hero-banner h1 { margin: 0 0 6px; font-size: 24px; font-weight: 800; font-family: 'Poppins', sans-serif; }
+    .hero-banner p { margin: 0; color: #dbeafe; font-size: 14px; }
     .announcements-card {
       background: #ffffff;
-      border-radius: var(--radius-card, 16px);
-      padding: 28px 32px;
+      border-radius: 16px;
+      padding: 24px 28px;
       border: 1px solid var(--color-border, #e2e8f0);
-      box-shadow: var(--shadow-card, 0 1px 3px rgba(15,23,42,0.06));
-    }
-    .top {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 16px;
-      margin-bottom: 24px;
-      padding-bottom: 18px;
-      border-bottom: 1px solid var(--color-border, #e2e8f0);
-    }
-    .top h1 {
-      font-family: var(--font-display, 'Poppins', sans-serif);
-      font-size: 24px;
-      font-weight: 700;
-      color: var(--nu-navy, #003087);
-      margin: 0;
-    }
-    .back {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      font-weight: 600;
-      font-size: 14px;
-      color: var(--nu-navy, #003087);
-      text-decoration: none;
-      padding: 8px 14px;
-      border-radius: var(--radius-md, 10px);
-      background: var(--nu-navy-subtle, #eff4fc);
-      transition: all 0.18s ease;
-    }
-    .back:hover {
-      background: var(--nu-navy-pale, #dbe6f8);
-      color: var(--nu-navy-dark, #00205b);
-      transform: translateX(-2px);
+      box-shadow: 0 2px 6px rgba(15,23,42,0.04);
     }
     .announcement {
-      border-left: 4px solid var(--nu-navy, #003087);
+      border-left: 4px solid #003087;
       padding: 18px 20px;
       border-radius: 12px;
       margin-bottom: 16px;
       background: #ffffff;
-      border-top: 1px solid var(--neutral-200, #e2e8f0);
-      border-right: 1px solid var(--neutral-200, #e2e8f0);
-      border-bottom: 1px solid var(--neutral-200, #e2e8f0);
+      border-top: 1px solid #e2e8f0;
+      border-right: 1px solid #e2e8f0;
+      border-bottom: 1px solid #e2e8f0;
       box-shadow: 0 1px 2px rgba(15,23,42,0.04);
       cursor: pointer;
       transition: all 0.2s ease;
     }
     .announcement:hover {
       transform: translateY(-2px);
-      box-shadow: var(--shadow-md, 0 4px 8px -2px rgba(15,23,42,0.08));
+      box-shadow: 0 8px 18px rgba(15,23,42,0.08);
     }
     .announcement--yellow {
-      border-left-color: var(--nu-gold, #ffb81c);
+      border-left-color: #ffb81c;
       background: #fffdf8;
     }
     .announcement--green {
-      border-left-color: var(--color-success, #10b981);
+      border-left-color: #10b981;
       background: #fcfdfd;
     }
     .announcement__header {
@@ -120,7 +112,7 @@ function escape($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
     .announcement__time {
       font-size: 12px;
       font-weight: 600;
-      color: var(--color-muted, #64748b);
+      color: #64748b;
       display: inline-flex;
       align-items: center;
       gap: 4px;
@@ -134,20 +126,20 @@ function escape($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
       border-radius: 9999px;
     }
     .announcement__status--unread {
-      background: var(--nu-gold-light, #fff7e6);
-      color: var(--nu-gold-dark, #b37b00);
-      border: 1px solid var(--nu-gold-subtle, #fff2d1);
+      background: #fff7e6;
+      color: #b37b00;
+      border: 1px solid #fff2d1;
     }
     .announcement__title {
-      font-family: var(--font-display, 'Poppins', sans-serif);
+      font-family: 'Poppins', sans-serif;
       font-weight: 700;
       font-size: 17px;
-      color: var(--color-heading, #0f172a);
+      color: #0f172a;
       margin-bottom: 8px;
       line-height: 1.35;
     }
     .announcement__body {
-      color: var(--color-body, #334155);
+      color: #334155;
       font-size: 14px;
       line-height: 1.6;
     }
@@ -160,45 +152,58 @@ function escape($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
     .empty-state {
       padding: 48px 24px;
       text-align: center;
-      color: var(--color-muted, #64748b);
+      color: #64748b;
       font-size: 15px;
+    }
+    @media (max-width: 900px) {
+      .app-shell { flex-direction: column; }
+      .main-viewport { padding: 16px; }
     }
   </style>
 </head>
 <body>
-  <div class="announcements-container">
-    <div class="announcements-card">
-      <div class="top">
-        <h1>Announcements</h1>
-        <a class="back" href="dashboard.php">← Back to Dashboard</a>
-      </div>
+  <div class="app-shell">
+    <?php 
+      $activeStudentNav = 'announcements';
+      require_once __DIR__ . '/_sidebar.php'; 
+    ?>
 
-      <div id="anns">
-        <?php if (empty($announcements)): ?>
-          <div class="empty-state">No announcements yet. Check back later for updates.</div>
-        <?php else: ?>
-          <?php foreach ($announcements as $i => $a): ?>
-            <?php 
-              $isRead = (bool)((int)($a['is_read'] ?? 0));
-              $cls = $i % 3 === 0 ? 'announcement' : ($i % 3 === 1 ? 'announcement announcement--yellow' : 'announcement announcement--green'); 
-            ?>
-            <div class="<?php echo $cls; ?> <?php echo $isRead ? 'read' : ''; ?>" data-id="<?php echo (int)$a['id']; ?>">
-              <div class="announcement__header">
-                <span class="announcement__time">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-                  <?php echo escape(date('M j, Y g:i A', strtotime((string)$a['created_at']))); ?>
-                </span>
-                <?php if (!$isRead): ?>
-                  <span class="announcement__status announcement__status--unread">New</span>
-                <?php endif; ?>
-              </div>
-              <div class="announcement__title"><?php echo escape($a['title']); ?></div>
-              <div class="announcement__body"><?php echo nl2br(escape($a['body'])); ?></div>
-            </div>
-          <?php endforeach; ?>
-        <?php endif; ?>
+    <main class="main-viewport">
+      <div class="announcements-container">
+        <div class="hero-banner">
+          <h1>Student Announcements</h1>
+          <p>Official bulletins, schedule reminders, and campus updates for Student Assistants.</p>
+        </div>
+
+        <div class="announcements-card">
+          <div id="anns">
+            <?php if (empty($announcements)): ?>
+              <div class="empty-state">No announcements yet. Check back later for updates.</div>
+            <?php else: ?>
+              <?php foreach ($announcements as $i => $a): ?>
+                <?php 
+                  $isRead = (bool)((int)($a['is_read'] ?? 0));
+                  $cls = $i % 3 === 0 ? 'announcement' : ($i % 3 === 1 ? 'announcement announcement--yellow' : 'announcement announcement--green'); 
+                ?>
+                <div class="<?php echo $cls; ?> <?php echo $isRead ? 'read' : ''; ?>" data-id="<?php echo (int)$a['id']; ?>">
+                  <div class="announcement__header">
+                    <span class="announcement__time">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                      <?php echo escape(date('M j, Y g:i A', strtotime((string)$a['created_at']))); ?>
+                    </span>
+                    <?php if (!$isRead): ?>
+                      <span class="announcement__status announcement__status--unread">New</span>
+                    <?php endif; ?>
+                  </div>
+                  <div class="announcement__title"><?php echo escape($a['title']); ?></div>
+                  <div class="announcement__body"><?php echo nl2br(escape($a['body'])); ?></div>
+                </div>
+              <?php endforeach; ?>
+            <?php endif; ?>
+          </div>
+        </div>
       </div>
-    </div>
+    </main>
   </div>
 
   <script>

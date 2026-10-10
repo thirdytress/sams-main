@@ -297,27 +297,10 @@ function h(?string $val): string
 </head>
 <body>
 <div class="shell">
-    <aside class="sidebar">
-        <div class="sidebar__brand">
-            <div class="sidebar__logo">NU</div>
-            <div>
-                <div class="sidebar__brand-name">SA System</div>
-                <div class="sidebar__brand-sub">Supervisor Portal</div>
-            </div>
-        </div>
-        <nav class="sidebar__nav" aria-label="Supervisor navigation">
-            <a href="dashboard.php" class="sidebar__nav-link">Dashboard</a>
-            <a href="attendance.php" class="sidebar__nav-link">Attendance</a>
-            <a href="duty_excuses.php" class="sidebar__nav-link sidebar__nav-link--active">Duty Excuses</a>
-            <a href="evaluation.php" class="sidebar__nav-link">Evaluation</a>
-            <a href="reports.php" class="sidebar__nav-link">Reports</a>
-            <a href="students.php" class="sidebar__nav-link">Students</a>
-            <a href="announcements.php" class="sidebar__nav-link">Announcements</a>
-        </nav>
-        <div class="sidebar__footer">
-            <a href="logout.php" class="sidebar__nav-link">Sign Out</a>
-        </div>
-    </aside>
+<?php 
+    $activeSupervisorNav = 'duty_excuses';
+    require_once __DIR__ . '/_sidebar.php'; 
+?>
 
     <div class="main">
         <header class="topbar">
@@ -325,7 +308,18 @@ function h(?string $val): string
                 <div class="topbar__title">Duty Excuses</div>
                 <div class="topbar__sub"><?= h($supervisorOffice !== '' ? $supervisorOffice : 'Assigned Office'); ?> · <?= h($supervisorName); ?></div>
             </div>
-            <div>
+            <div style="display:flex;align-items:center;gap:12px;">
+                <a href="profile.php" style="display:flex;align-items:center;gap:8px;text-decoration:none;color:#101828;font-weight:700;font-size:14px;" title="My Profile">
+                    <?php $supAv = sams_user_avatar_url($user['profile_image'] ?? null, '../'); ?>
+                    <?php if ($supAv): ?>
+                        <img src="<?php echo htmlspecialchars($supAv); ?>?v=<?php echo time(); ?>" alt="" style="width:34px;height:34px;border-radius:50%;object-fit:cover;border:1.5px solid #003087;">
+                    <?php else: ?>
+                        <div style="width:34px;height:34px;border-radius:50%;background:#003087;color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;">
+                            <?php echo htmlspecialchars(strtoupper(substr($supervisorName, 0, 1))); ?>
+                        </div>
+                    <?php endif; ?>
+                    <span><?= h($supervisorName); ?></span>
+                </a>
                 <a href="attendance.php" class="btn-filter" style="text-decoration:none;">View Attendance Log</a>
             </div>
         </header>

@@ -217,49 +217,10 @@ $pageTitle = 'Attendance Monitoring | Supervisor Portal';
 </head>
 <body>
 <div class="shell">
-    <aside class="sidebar">
-        <div class="sidebar__brand">
-            <div class="sidebar__logo"><span class="sidebar__logo-text">NU</span></div>
-            <div>
-                <div class="sidebar__brand-name">SA System</div>
-                <div class="sidebar__brand-sub">Supervisor</div>
-            </div>
-        </div>
-
-        <nav class="sidebar__nav" aria-label="Supervisor navigation">
-            <a href="dashboard.php" class="sidebar__nav-link">
-                <svg class="sidebar__nav-icon" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M2.5 7.5L10 2.5L17.5 7.5V17.5H12.5V12.5H7.5V17.5H2.5V7.5Z" stroke="#364153" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                Dashboard
-            </a>
-            <a href="attendance.php" class="sidebar__nav-link sidebar__nav-link--active" aria-current="page">
-                <svg class="sidebar__nav-icon" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M17 5L8 14.5L3.5 10" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                Attendance
-            </a>
-            <a href="duty_excuses.php" class="sidebar__nav-link">
-                <svg class="sidebar__nav-icon" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M5 3a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2V7.5L12.5 3H5z" stroke="#364153" stroke-width="1.5"/><path d="M12 3v5h5M7 11h6M7 14h4" stroke="#364153" stroke-width="1.5" stroke-linecap="round"/></svg>
-                Duty Excuses
-            </a>
-            <a href="evaluation.php" class="sidebar__nav-link">
-                <svg class="sidebar__nav-icon" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 2l2 5.5H17l-4 3 1.5 5.5L10 13l-4.5 3L7 11 3 8h5L10 2Z" stroke="#364153" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                Evaluation
-            </a>
-            <a href="reports.php" class="sidebar__nav-link">
-                <svg class="sidebar__nav-icon" viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="2.5" y="2.5" width="15" height="15" rx="2" stroke="#364153" stroke-width="1.5"/><path d="M6 14V10M10 14V7M14 14V11" stroke="#364153" stroke-width="1.5" stroke-linecap="round"/></svg>
-                Reports
-            </a>
-            <a href="students.php" class="sidebar__nav-link">
-                <svg class="sidebar__nav-icon" viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="10" cy="6.5" r="3" stroke="#364153" stroke-width="1.5"/><path d="M3.5 17c0-3.5 2.9-6 6.5-6s6.5 2.5 6.5 6" stroke="#364153" stroke-width="1.5" stroke-linecap="round"/></svg>
-                Students
-            </a>
-        </nav>
-
-        <div class="sidebar__footer">
-            <a href="logout.php" class="sidebar__nav-link">
-                <svg class="sidebar__nav-icon" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M13 15l5-5-5-5M18 10H8" stroke="#364153" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 17.5H3.5a.5.5 0 0 1-.5-.5V3a.5.5 0 0 1 .5-.5H8" stroke="#364153" stroke-width="1.5" stroke-linecap="round"/></svg>
-                Sign Out
-            </a>
-        </div>
-    </aside>
+<?php 
+    $activeSupervisorNav = 'attendance';
+    require_once __DIR__ . '/_sidebar.php'; 
+?>
 
     <main class="main">
         <header class="topbar">
@@ -267,12 +228,22 @@ $pageTitle = 'Attendance Monitoring | Supervisor Portal';
                 <div class="topbar__title">Attendance Monitoring</div>
                 <div class="topbar__sub"><?php echo htmlspecialchars($supervisorOffice !== '' ? $supervisorOffice : 'Assigned Office'); ?> · <?php echo htmlspecialchars($termLabel); ?></div>
             </div>
-            <div class="topbar__right">
+            <div class="topbar__right" style="display:flex;align-items:center;gap:12px;">
                 <div class="topbar__notif-btn" role="button" aria-label="Notifications" tabindex="0">
                     <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z" fill="#4A5565"/></svg>
                     <span class="topbar__notif-dot" aria-hidden="true" style="display:none"></span>
                 </div>
-                <a href="profile.php" class="button button--neutral"><?php echo htmlspecialchars($supervisorName, ENT_QUOTES, 'UTF-8'); ?></a>
+                <a href="profile.php" style="display:flex;align-items:center;gap:8px;text-decoration:none;color:#101828;font-weight:700;font-size:14px;" title="My Profile">
+                    <?php $supAv = sams_user_avatar_url($user['profile_image'] ?? null, '../'); ?>
+                    <?php if ($supAv): ?>
+                        <img src="<?php echo htmlspecialchars($supAv); ?>?v=<?php echo time(); ?>" alt="" style="width:34px;height:34px;border-radius:50%;object-fit:cover;border:1.5px solid #003087;">
+                    <?php else: ?>
+                        <div style="width:34px;height:34px;border-radius:50%;background:#003087;color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;">
+                            <?php echo htmlspecialchars(strtoupper(substr($supervisorName, 0, 1))); ?>
+                        </div>
+                    <?php endif; ?>
+                    <span><?php echo htmlspecialchars($supervisorName, ENT_QUOTES, 'UTF-8'); ?></span>
+                </a>
                 <form method="get" class="inline-form">
                     <select class="select" name="refresh" aria-label="Auto refresh">
                         <option value="0">Manual</option>

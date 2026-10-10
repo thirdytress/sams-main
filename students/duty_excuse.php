@@ -616,65 +616,10 @@ function h(?string $str): string
 <body>
 
   <!-- Sidebar -->
-  <aside class="sidebar">
-    <div class="sidebar__brand">
-      <div class="sidebar__logo">NU</div>
-      <div>
-        <div class="sidebar__brand-name">SAMS</div>
-        <div class="sidebar__brand-sub">Student Portal</div>
-      </div>
-    </div>
-
-    <nav class="sidebar__nav" aria-label="Main navigation">
-      <a class="nav-item" href="dashboard.php">
-        <svg class="nav-item__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M3 11.5L12 4l9 7.5M5 10.5V20h5v-5h4v5h5v-9.5"/>
-        </svg>
-        Dashboard
-      </a>
-      <a class="nav-item" href="schedule.php">
-        <svg class="nav-item__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <rect x="4" y="5" width="16" height="15" rx="2"/>
-          <path d="M8 3v4M16 3v4M4 9h16"/>
-        </svg>
-        My Schedule
-      </a>
-      <a class="nav-item" href="temporary_duty_request.php">
-        <svg class="nav-item__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M12 4v16M4 12h16"/>
-        </svg>
-        Temporary Duty Request
-      </a>
-      <a class="nav-item nav-item--active" href="duty_excuse.php" aria-current="page">
-        <svg class="nav-item__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M9 12h6M9 16h4M7 3h10a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/>
-          <path d="M9 7h2"/>
-        </svg>
-        Duty Excuse
-      </a>
-      <a class="nav-item" href="attendance_history.php">
-        <svg class="nav-item__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M5 4h10l4 4v12H5zM15 4v4h4M8 11h8M8 15h8"/>
-        </svg>
-        Duty-Hour Report
-      </a>
-      <a class="nav-item" href="profile.php">
-        <svg class="nav-item__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="12" cy="8" r="4"/>
-          <path d="M6 20c1.5-3.5 4-5 6-5s4.5 1.5 6 5"/>
-        </svg>
-        Profile
-      </a>
-    </nav>
-
-    <div class="sidebar__footer">
-      <div class="sidebar__user">
-        <span class="sidebar__user-label">Student Assistant</span>
-        <span class="sidebar__user-name"><?php echo h($studentName); ?></span>
-        <span class="sidebar__user-id"><?php echo h($studentCode); ?></span>
-      </div>
-    </div>
-  </aside>
+<?php 
+  $activeStudentNav = 'duty_excuse';
+  require_once __DIR__ . '/_sidebar.php'; 
+?>
 
   <!-- Main Content -->
   <main class="content-area">

@@ -265,10 +265,24 @@ $requests = $recentStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
         .status { font-weight:800; text-transform:capitalize; }
         @media (max-width:650px) { .grid { grid-template-columns:1fr; } .full { grid-column:auto; } }
     </style>
+<style>
+    .app-shell { display: flex; min-height: 100vh; }
+    .main-viewport { flex: 1; min-width: 0; padding: 32px 28px; }
+    @media (max-width: 900px) {
+      .app-shell { flex-direction: column; }
+      .main-viewport { padding: 16px; }
+    }
+</style>
 </head>
 <body>
-<main class="page">
-    <p><a href="dashboard.php">← Back to dashboard</a></p>
+<div class="app-shell">
+<?php 
+  $activeStudentNav = 'temporary_duty_request';
+  $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($student['last_name'] ?? ''));
+  $studentCode = (string)($student['student_id_number'] ?? '');
+  require_once __DIR__ . '/_sidebar.php'; 
+?>
+<main class="main-viewport page">
     <div class="card">
         <h1>Temporary Duty Request</h1>
         <p>If your class is cancelled or vacant, submit proof and request a temporary duty shift. The request must be at least 2 hours, may combine multiple class schedules on the same day including the gaps between them, and must not overlap an existing duty schedule.</p>
@@ -364,5 +378,6 @@ $requests = $recentStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     }
 }());
 </script>
+</div>
 </body>
 </html>

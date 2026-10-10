@@ -57,6 +57,7 @@ $studentStmt = $pdo->query(
     latest_app.application_status,
     COALESCE(u.first_name, '') AS first_name,
     COALESCE(u.last_name, '') AS last_name,
+    u.profile_image,
     COALESCE(latest_app.preferred_office, 'Unassigned') AS preferred_office,
     COALESCE(hours.total_hours, 0) AS total_hours,
     COALESCE(rating.avg_rating, 0) AS avg_rating
@@ -1004,8 +1005,13 @@ function sams_html(string $value): string
             <div class="topbar__user-name"><?php echo sams_html($admin_name); ?></div>
             <div class="topbar__user-role"><?php echo sams_html($admin_role); ?></div>
         </div>
-        <div class="topbar__avatar">
-          <svg viewBox="0 0 24 24" fill="none" aria-label="User avatar"><circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="1.8"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        <div class="topbar__avatar" style="overflow:hidden;">
+          <?php $topAvatar = sams_user_avatar_url($currentUser['profile_image'] ?? null, '../'); ?>
+          <?php if ($topAvatar): ?>
+            <img src="<?php echo sams_html($topAvatar); ?>" alt="<?php echo sams_html($admin_name); ?>" style="width:100%;height:100%;object-fit:cover;display:block;">
+          <?php else: ?>
+            <svg viewBox="0 0 24 24" fill="none" aria-label="User avatar"><circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="1.8"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          <?php endif; ?>
         </div>
       </div>
     </header>
@@ -1122,7 +1128,14 @@ function sams_html(string $value): string
               <tr data-status="<?php echo sams_html($applicationStatus); ?>" data-program="<?php echo sams_html((string) ($student['program'] ?? '')); ?>">
                 <td>
                   <div class="student-cell">
-                    <div class="student-cell__avatar" aria-hidden="true"><?php echo sams_html(sams_student_cell_initials($student)); ?></div>
+                    <?php $stuAv = sams_user_avatar_url($student['profile_image'] ?? null, '../'); ?>
+                    <div class="student-cell__avatar" aria-hidden="true" style="overflow:hidden;">
+                      <?php if ($stuAv): ?>
+                        <img src="<?php echo sams_html($stuAv); ?>" alt="" style="width:100%;height:100%;object-fit:cover;">
+                      <?php else: ?>
+                        <?php echo sams_html(sams_student_cell_initials($student)); ?>
+                      <?php endif; ?>
+                    </div>
                     <div>
                       <div class="student-cell__name"><?php echo sams_html($studentName); ?></div>
                       <div class="student-cell__year"><?php echo sams_html($yearLabel); ?></div>
