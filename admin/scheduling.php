@@ -1739,7 +1739,7 @@ $hours = range($calendarStartHour, $calendarEndHour); // include last hour (e.g.
             <div class="sched-header">
                                 <div class="sched-header__left"></div>
                 <div class="sched-header__right">
-                    <div style="display:flex;align-items:center;gap:12px;">
+                    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
                         <div style="font-weight:700;color:var(--color-body);">Pending applications appear below for review.</div>
                         <form method="GET" style="margin-left:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
                             <?php if ($selectedStudentId > 0): ?><input type="hidden" name="student_id" value="<?= (int) $selectedStudentId ?>"><?php endif; ?>
@@ -1759,6 +1759,22 @@ $hours = range($calendarStartHour, $calendarEndHour); // include last hour (e.g.
                                 <option value="deployed" <?php echo $showStatus === 'deployed' ? 'selected' : ''; ?>>Deployed</option>
                             </select>
                         </form>
+                        <?php if ($selectedStudentId > 0): ?>
+                            <a href="print_student_schedule.php?student_id=<?= (int)$selectedStudentId ?>" target="_blank" class="sched-btn" style="background:#00205B;color:#fff;display:inline-flex;align-items:center;gap:6px;text-decoration:none;padding:7px 14px;border-radius:8px;font-weight:700;font-size:13px;box-shadow:0 2px 6px rgba(0,32,91,0.25);" title="Print Student Duty Hours Sheet for 201 Folder">
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+                                <span>Print Schedule (PDF)</span>
+                            </a>
+                        <?php elseif ($selectedStudentOffice !== ''): ?>
+                            <a href="print_student_schedule.php?office=<?= urlencode($selectedStudentOffice) ?>" target="_blank" class="sched-btn" style="background:#00205B;color:#fff;display:inline-flex;align-items:center;gap:6px;text-decoration:none;padding:7px 14px;border-radius:8px;font-weight:700;font-size:13px;box-shadow:0 2px 6px rgba(0,32,91,0.25);" title="Print All Duty Schedules for <?= h($selectedStudentOffice) ?>">
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+                                <span>Print Office Schedules (PDF)</span>
+                            </a>
+                        <?php else: ?>
+                            <a href="print_student_schedule.php" target="_blank" class="sched-btn" style="background:#00205B;color:#fff;display:inline-flex;align-items:center;gap:6px;text-decoration:none;padding:7px 14px;border-radius:8px;font-weight:700;font-size:13px;box-shadow:0 2px 6px rgba(0,32,91,0.25);" title="Print Duty Schedules for All Students">
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+                                <span>Print Duty Schedules (PDF)</span>
+                            </a>
+                        <?php endif; ?>
                     </div>
                 </div>
             </div>
@@ -1849,7 +1865,13 @@ $hours = range($calendarStartHour, $calendarEndHour); // include last hour (e.g.
                                     }
                                 }
                                 ?>
-                                <div style="display:flex;gap:18px;justify-content:flex-start;align-items:center;margin:18px 0 0 0;">
+                                <div style="display:flex;gap:14px;justify-content:flex-start;align-items:center;margin:18px 0 0 0;flex-wrap:wrap;">
+                                    <?php if ($selectedStudentId > 0): ?>
+                                        <a href="print_student_schedule.php?student_id=<?= (int)$selectedStudentId ?>" target="_blank" class="btn-create" style="background:#00205B;min-width:180px;font-size:15px;display:inline-flex;align-items:center;justify-content:center;gap:8px;text-decoration:none;box-shadow:0 2px 8px rgba(0,32,91,0.25);" title="Open official Printable Duty Hours Sheet for 201 Physical Folder">
+                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+                                            <span>Print Duty Schedule (PDF)</span>
+                                        </a>
+                                    <?php endif; ?>
                                     <?php if ($isStudentDeployed): ?>
                                         <form method="POST" style="margin:0;">
                                             <input type="hidden" name="action" value="undeploy_student">
@@ -1960,11 +1982,17 @@ $hours = range($calendarStartHour, $calendarEndHour); // include last hour (e.g.
                                             <?php endforeach; ?>
                                         <?php endif; ?>
                                     </div>
-                                    <?php if (schedule_has_cor_document($pdo, (int) $app['application_id'])): ?>
-                                        <button type="button" class="btn-small" style="margin-top:10px;background:#e0f2fe;color:#075985;" onclick="openCorPreview(<?= (int) $app['application_id'] ?>)">View COR</button>
-                                    <?php else: ?>
-                                        <span style="display:inline-block;margin-top:10px;font-size:12px;color:var(--color-muted);">COR not uploaded</span>
-                                    <?php endif; ?>
+                                    <div style="display:flex;gap:6px;align-items:center;margin-top:10px;flex-wrap:wrap;">
+                                        <?php if (schedule_has_cor_document($pdo, (int) $app['application_id'])): ?>
+                                            <button type="button" class="btn-small" style="background:#e0f2fe;color:#075985;" onclick="openCorPreview(<?= (int) $app['application_id'] ?>)">View COR</button>
+                                        <?php else: ?>
+                                            <span style="display:inline-block;font-size:12px;color:var(--color-muted);">COR not uploaded</span>
+                                        <?php endif; ?>
+                                        <a href="print_student_schedule.php?student_id=<?= (int) $app['student_id'] ?>" target="_blank" class="btn-small" style="background:#00205B;color:#fff;text-decoration:none;display:inline-flex;align-items:center;gap:4px;" title="Print Duty Schedule (PDF)">
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+                                            <span>PDF</span>
+                                        </a>
+                                    </div>
 
                                 </div>
                                 <?php endforeach; ?>
@@ -1979,11 +2007,17 @@ $hours = range($calendarStartHour, $calendarEndHour); // include last hour (e.g.
                                         <div class="sched-item sched-item--<?= h(schedule_color($appOffice)) ?>">
                                             <a class="sched-item__name sched-student-link" style="color:var(--color-primary);text-decoration:underline;text-underline-offset:3px;" href="<?= h(schedule_student_url($pdo, (int) $app['student_id'], $selectedStudentOffice, $showStatus)) ?>"><?= h($appName) ?></a>
                                             <div class="sched-item__loc">Preferred: <?= h($appOffice) ?> · <?= h((string)$app['student_code']) ?></div>
-                                            <?php if (schedule_has_cor_document($pdo, (int) $app['application_id'])): ?>
-                                                <button type="button" class="btn-small" style="margin-top:10px;background:#e0f2fe;color:#075985;" onclick="openCorPreview(<?= (int) $app['application_id'] ?>)">View COR</button>
-                                            <?php else: ?>
-                                                <span style="display:inline-block;margin-top:10px;font-size:12px;color:var(--color-muted);">COR not uploaded</span>
-                                            <?php endif; ?>
+                                            <div style="display:flex;gap:6px;align-items:center;margin-top:10px;flex-wrap:wrap;">
+                                                <?php if (schedule_has_cor_document($pdo, (int) $app['application_id'])): ?>
+                                                    <button type="button" class="btn-small" style="background:#e0f2fe;color:#075985;" onclick="openCorPreview(<?= (int) $app['application_id'] ?>)">View COR</button>
+                                                <?php else: ?>
+                                                    <span style="display:inline-block;font-size:12px;color:var(--color-muted);">COR not uploaded</span>
+                                                <?php endif; ?>
+                                                <a href="print_student_schedule.php?student_id=<?= (int) $app['student_id'] ?>" target="_blank" class="btn-small" style="background:#00205B;color:#fff;text-decoration:none;display:inline-flex;align-items:center;gap:4px;" title="Print Duty Schedule (PDF)">
+                                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+                                                    <span>PDF</span>
+                                                </a>
+                                            </div>
 
                                         </div>
                                     <?php endforeach; ?>
@@ -1999,11 +2033,17 @@ $hours = range($calendarStartHour, $calendarEndHour); // include last hour (e.g.
                                         <div class="sched-item sched-item--<?= h(schedule_color($dOffice)) ?>">
                                             <a class="sched-item__name sched-student-link" style="color:var(--color-primary);text-decoration:underline;text-underline-offset:3px;" href="<?= h(schedule_student_url($pdo, (int) $ds['student_id'], $selectedStudentOffice, $showStatus)) ?>"><?= h($dName) ?></a>
                                             <div class="sched-item__loc"><?= h($dOffice) ?> · <?= h((string)$ds['student_code']) ?></div>
-                                            <?php if (schedule_has_cor_document($pdo, (int) $ds['application_id'])): ?>
-                                                <button type="button" class="btn-small" style="margin-top:10px;background:#e0f2fe;color:#075985;" onclick="openCorPreview(<?= (int) $ds['application_id'] ?>)">View COR</button>
-                                            <?php else: ?>
-                                                <span style="display:inline-block;margin-top:10px;font-size:12px;color:var(--color-muted);">COR not uploaded</span>
-                                            <?php endif; ?>
+                                            <div style="display:flex;gap:6px;align-items:center;margin-top:10px;flex-wrap:wrap;">
+                                                <?php if (schedule_has_cor_document($pdo, (int) $ds['application_id'])): ?>
+                                                    <button type="button" class="btn-small" style="background:#e0f2fe;color:#075985;" onclick="openCorPreview(<?= (int) $ds['application_id'] ?>)">View COR</button>
+                                                <?php else: ?>
+                                                    <span style="display:inline-block;font-size:12px;color:var(--color-muted);">COR not uploaded</span>
+                                                <?php endif; ?>
+                                                <a href="print_student_schedule.php?student_id=<?= (int) $ds['student_id'] ?>" target="_blank" class="btn-small" style="background:#00205B;color:#fff;text-decoration:none;display:inline-flex;align-items:center;gap:4px;" title="Print Duty Schedule (PDF)">
+                                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+                                                    <span>PDF</span>
+                                                </a>
+                                            </div>
                                         </div>
                                     <?php endforeach; ?>
                                 <?php endif; ?>
