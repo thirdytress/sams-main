@@ -19,7 +19,7 @@ if ($applicationId <= 0) {
     exit;
 }
 
-function sams_admin_column_exists(PDO $pdo, string $table, string $column): bool
+function sams_admin_column_exists(\PDO $pdo, string $table, string $column): bool
 {
     static $cache = [];
     $key = $table . '.' . $column;
@@ -43,13 +43,13 @@ function sams_admin_column_exists(PDO $pdo, string $table, string $column): bool
 
         $cache[$key] = ((int) $stmt->fetchColumn()) > 0;
         return $cache[$key];
-    } catch (Throwable $exception) {
+    } catch (\Throwable $exception) {
         $cache[$key] = false;
         return false;
     }
 }
 
-function sams_admin_first_existing_column(PDO $pdo, string $table, array $columns): ?string
+function sams_admin_first_existing_column(\PDO $pdo, string $table, array $columns): ?string
 {
     foreach ($columns as $column) {
         if (sams_admin_column_exists($pdo, $table, $column)) {
@@ -69,7 +69,7 @@ try {
     $termPkColumn = sams_admin_first_existing_column($pdo, 'terms', ['id', 'term_id']);
 
     if ($applicationIdColumn === null || $studentPkColumn === null || $userPkColumn === null || $termPkColumn === null) {
-        throw new RuntimeException('Required database ID columns are missing.');
+        throw new \RuntimeException('Required database ID columns are missing.');
     }
 
     $unitsSelect = sams_admin_column_exists($pdo, 'students', 'units') ? 's.units' : 'NULL AS units';
@@ -103,11 +103,11 @@ try {
     $application = $applicationStmt->fetch();
 
     if (!$application) {
-        throw new RuntimeException('Application not found.');
+        throw new \RuntimeException('Application not found.');
     }
 
     if ($application['status'] === 'draft') {
-        throw new RuntimeException('Application is incomplete and not yet submitted.');
+        throw new \RuntimeException('Application is incomplete and not yet submitted.');
     }
 
     $documents = [];
@@ -177,7 +177,7 @@ try {
         'availability_change_request' => $availabilityChangeRequest,
     ]);
     exit;
-} catch (Throwable $exception) {
+} catch (\Throwable $exception) {
     http_response_code(400);
     echo json_encode([
         'success' => false,
