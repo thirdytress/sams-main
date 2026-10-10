@@ -1,6 +1,64 @@
 <?php
 $activeAdminNav = (string) ($activeAdminNav ?? '');
-$pendingApplications = (int) ($pendingApplications ?? 0);
+if ($activeAdminNav === '') {
+    $scriptName = basename($_SERVER['SCRIPT_NAME'] ?? '');
+    $activeAdminNav = match ($scriptName) {
+        'dashboard.php' => 'dashboard',
+        'application.php', 'applications.php', 'application_view.php' => 'applications',
+        'scheduling.php', 'schedules.php' => 'scheduling',
+        'temporary_duty_requests.php', 'temporary_duty.php' => 'temporary_duty',
+        'shuffle_requests.php' => 'shuffle_requests',
+        'duty_excuses.php' => 'duty_excuses',
+        'attendance.php' => 'attendance',
+        'nfc_kiosk.php' => 'nfc_kiosk',
+        'evaluation.php' => 'evaluation',
+        'supervisors.php' => 'supervisors',
+        'students.php', 'student_detail.php' => 'students',
+        'meetings.php' => 'meetings',
+        'announcements.php' => 'announcements',
+        'reports.php' => 'reports',
+        'audit_logs.php' => 'audit_logs',
+        'profile.php' => 'profile',
+        default => '',
+    };
+}
+
+if (function_exists('sams_pdo')) {
+    $sidebarPdo = sams_pdo();
+    if (!isset($pendingApplications)) {
+        try {
+            $pendingApplications = (int) $sidebarPdo->query("SELECT COUNT(*) FROM applications WHERE status IN ('pending', 'submitted')")->fetchColumn();
+        } catch (\Throwable) {
+            $pendingApplications = 0;
+        }
+    }
+    if (!isset($pendingTemporaryDuty)) {
+        try {
+            $pendingTemporaryDuty = (int) $sidebarPdo->query("SELECT COUNT(*) FROM temporary_duty_requests WHERE status = 'pending'")->fetchColumn();
+        } catch (\Throwable) {
+            $pendingTemporaryDuty = 0;
+        }
+    }
+    if (!isset($pendingDutyExcuses)) {
+        try {
+            $pendingDutyExcuses = (int) $sidebarPdo->query("SELECT COUNT(*) FROM duty_excuses WHERE status = 'pending'")->fetchColumn();
+        } catch (\Throwable) {
+            $pendingDutyExcuses = 0;
+        }
+    }
+    if (!isset($pendingShuffleRequests)) {
+        try {
+            $pendingShuffleRequests = (int) $sidebarPdo->query("SELECT COUNT(*) FROM shuffle_requests WHERE status = 'pending'")->fetchColumn();
+        } catch (\Throwable) {
+            $pendingShuffleRequests = 0;
+        }
+    }
+} else {
+    $pendingApplications = (int) ($pendingApplications ?? 0);
+    $pendingTemporaryDuty = (int) ($pendingTemporaryDuty ?? 0);
+    $pendingDutyExcuses = (int) ($pendingDutyExcuses ?? 0);
+    $pendingShuffleRequests = (int) ($pendingShuffleRequests ?? 0);
+}
 
 if (!function_exists('sams_admin_sidebar_icon')) {
     function sams_admin_sidebar_icon(string $key, bool $active): string
@@ -39,9 +97,9 @@ $adminSidebarSections = [
     'APPLICATIONS & SCHEDULING' => [
         ['key' => 'applications', 'href' => 'applications.php', 'label' => 'Applications', 'badge' => $pendingApplications],
         ['key' => 'scheduling', 'href' => 'scheduling.php', 'label' => 'Scheduling'],
-        ['key' => 'temporary_duty', 'href' => 'temporary_duty_requests.php', 'label' => 'Temporary Duty'],
-        ['key' => 'shuffle_requests', 'href' => 'shuffle_requests.php', 'label' => 'Shuffle Requests'],
-        ['key' => 'duty_excuses', 'href' => 'duty_excuses.php', 'label' => 'Duty Excuses'],
+        ['key' => 'temporary_duty', 'href' => 'temporary_duty_requests.php', 'label' => 'Temporary Duty', 'badge' => $pendingTemporaryDuty],
+        ['key' => 'shuffle_requests', 'href' => 'shuffle_requests.php', 'label' => 'Shuffle Requests', 'badge' => $pendingShuffleRequests],
+        ['key' => 'duty_excuses', 'href' => 'duty_excuses.php', 'label' => 'Duty Excuses', 'badge' => $pendingDutyExcuses],
     ],
     'MONITORING & DUTY' => [
         ['key' => 'attendance', 'href' => 'attendance.php', 'label' => 'Attendance Tracking'],

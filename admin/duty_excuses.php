@@ -162,6 +162,19 @@ function h(?string $val): string
             padding: 0;
         }
 
+        .shell {
+            display: flex;
+            width: 100%;
+            min-height: 100vh;
+        }
+
+        .main {
+            flex: 1;
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+        }
+
         .page-container {
             padding: 28px 32px;
             max-width: 1400px;
